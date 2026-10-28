@@ -14,14 +14,13 @@ changing architecture.
 
 ## Status
 
-Phase 0 approved (2026-10-28). Phase 1 (v0.1) approved and archived (2026-10-28,
-`openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing`): `setup`, `up [--wait]`,
-`status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`, `skill`, routing by host and path
-through `siding-proxy`, `just smoke-stacks`. Phase 2 (`phase-2-overview-and-budget`, v0.2)
-implemented, waiting for approval (2026-10-28), not yet archived: `siding ui` at
-`siding.localhost`, the memory budget (`setup --budget`, `up` exits 3), `gc`, `lint`,
-`teardown`, `just build-darwin`; tested by hand in the devcontainer and on the Mac with Docker Desktop.
-After approval: `/opsx:archive`, then Phase 3 (`phase-3-snapshots-and-queue`, v0.3).
+Phase 0 approved (2026-10-28). Phase 1 (v0.1) and Phase 2 (v0.2) approved and archived
+(2026-10-28, `openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing` and
+`…-phase-2-overview-and-budget`). siding today: `setup [--port] [--budget]`, `teardown`,
+`up [--wait] [--force]`, `status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`, `gc`,
+`lint`, `ui`, `skill`; routing by host and path through `siding-proxy`; a memory budget;
+`just smoke-stacks`, `just build-darwin`. Next: Phase 3 (`phase-3-snapshots-and-queue`, v0.3),
+starting with `/opsx:propose`.
 
 ## Working agreements
 

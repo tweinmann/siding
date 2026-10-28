@@ -23,7 +23,7 @@ context: |
 
   Status: pre-alpha. Phase 0 (repository, devcontainer, OpenSpec, CI) and Phase 1 (v0.1:
   stacks per worktree, routing through siding-proxy, the verdict of status) are done; Phase 2
-  (v0.2: the overview siding ui, the memory budget, gc, lint) is implemented. OpenSpec is the only planning source: `openspec/specs/` is what siding
+  (v0.2: the overview siding ui, the memory budget, gc, lint, teardown) is done. OpenSpec is the only planning source: `openspec/specs/` is what siding
   does today, `openspec/changes/` what it is about to do (the roadmap is the
   `phase-<n>-<slug>` changes), `openspec/changes/archive/` how it got here. CLAUDE.md holds the
   working agreements, guardrails, safety rules and conventions in full; read it before
