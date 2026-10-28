@@ -113,7 +113,7 @@ func TestErrorCodes(t *testing.T) {
 		fail.InvalidArguments, fail.NotAGitRepository, fail.NoBranch, fail.ComposeFileNotFound,
 		fail.ComposeFailed, fail.DockerUnavailable, fail.ProxyNotRunning, fail.PortInUse,
 		fail.InvalidRoute, fail.AmbiguousPort, fail.SlugCollision, fail.StackNotFound,
-		fail.UnmergedBranch, fail.DirtyWorktree, fail.Internal,
+		fail.UnmergedBranch, fail.DirtyWorktree, fail.NoCapacity, fail.NotInteractive, fail.Internal,
 	}
 	for _, code := range codes {
 		t.Run(code, func(t *testing.T) {
@@ -127,8 +127,12 @@ func TestErrorCodes(t *testing.T) {
 			root.AddCommand(sub)
 
 			var out, errOut bytes.Buffer
-			if got := Execute(context.Background(), root, []string{"boom"}, &out, &errOut); got != exitFailed {
-				t.Errorf("exit code %d", got)
+			wantCode := exitFailed
+			if code == fail.NoCapacity {
+				wantCode = exitNoCapacity
+			}
+			if got := Execute(context.Background(), root, []string{"boom"}, &out, &errOut); got != wantCode {
+				t.Errorf("exit code %d, want %d", got, wantCode)
 			}
 			if out.String() != "" || errOut.String() != "error: it broke\nhint: try again\n" {
 				t.Errorf("text: stdout %q, stderr %q", out.String(), errOut.String())

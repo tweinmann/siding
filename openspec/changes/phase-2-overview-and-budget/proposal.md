@@ -22,6 +22,9 @@ machine needs a limit, so that the fifth stack does not make the first four unus
 - `siding lint`: checks a compose file for what breaks parallel stacks (fixed container,
   network or volume names, shared host paths, ambiguous ports, missing healthchecks), as a
   `LintReport` with error, warning and info findings.
+- `siding teardown [--dry-run]`: the counterpart of `setup`; removes `siding-proxy`, its files
+  and the network `siding` when unused, and leaves every stack running as a plain Compose
+  project.
 - A new label `dev.siding.gitdir` (the repository's common git directory) on every stack, so
   `gc` can tell whether the branch of a deleted worktree is merged.
 - Development: `just build-darwin` builds a macOS binary to try siding on the Mac against
@@ -40,7 +43,7 @@ machine needs a limit, so that the fifth stack does not make the first four unus
 ### Modified Capabilities
 - `cli-contract`: exit 3 for `NoCapacity` with an `Error` document; new error codes
   `NoCapacity` and `NotInteractive`.
-- `proxy`: `setup --budget`, and the proxy's route to `siding ui`.
+- `proxy`: `setup --budget`, the proxy's route to `siding ui`, and `siding teardown`.
 - `stack-identity`: the label `dev.siding.gitdir`.
 - `stack-list`: `ps` shows the budget.
 - `stack-lifecycle`: `down --volumes` accepts a squash-merged branch (upstream deleted), as `gc` does.

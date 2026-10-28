@@ -10,6 +10,7 @@ import (
 
 	"github.com/tweinmann/siding/internal/compose"
 	"github.com/tweinmann/siding/internal/fail"
+	"github.com/tweinmann/siding/internal/git"
 	"github.com/tweinmann/siding/internal/stack"
 )
 
@@ -85,17 +86,17 @@ func (a *app) keepsWork(ctx context.Context, st existing) error {
 		return fail.New(fail.DirtyWorktree, "the worktree %s has uncommitted changes; its volumes stay", st.wt.Top).
 			WithHint("commit or stash them first, or remove the data anyway with --force")
 	}
-	merged, base, err := a.opts.Git.Merged(ctx, st.wt.Top, st.wt.Branch)
+	m, err := a.opts.Git.MergeState(ctx, git.Repo{Dir: st.wt.Top}, st.wt.Branch)
 	if err != nil {
 		return err
 	}
-	if !merged {
+	if !m.Merged() {
 		into := "no default branch was found (origin/HEAD, main or master)"
-		if base != "" {
-			into = "it is not merged into " + strings.TrimPrefix(strings.TrimPrefix(base, "refs/remotes/"), "refs/heads/")
+		if m.Base != "" {
+			into = "it is not merged into " + m.BaseName()
 		}
 		return fail.New(fail.UnmergedBranch, "the branch %s may hold unmerged work: %s; its volumes stay", st.wt.Branch, into).
-			WithHint("merge it first, or remove the data anyway with --force (a squash merge also needs --force)")
+			WithHint("merge it first, or remove the data anyway with --force (after a squash merge, git fetch --prune makes it count as merged)")
 	}
 	return nil
 }

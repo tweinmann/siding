@@ -1,0 +1,55 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "GC",
+  "dryRun": true,
+  "stacks": [
+    {
+      "project": "shop-done",
+      "repo": "shop",
+      "branch": "done",
+      "worktree": "/src/shop-done",
+      "reason": "Merged",
+      "containers": [
+        "shop-done-web-1"
+      ],
+      "networks": [
+        "shop-done_default"
+      ],
+      "volumes": [
+        "shop-done_data"
+      ]
+    },
+    {
+      "project": "shop-old",
+      "repo": "shop",
+      "branch": "old",
+      "worktree": "/src/shop-old",
+      "reason": "WorktreeGone",
+      "containers": [
+        "shop-old-web-1"
+      ],
+      "networks": [
+        "shop-old_default"
+      ],
+      "volumes": [
+        "shop-old_data"
+      ]
+    }
+  ],
+  "kept": [
+    {
+      "project": "shop-main",
+      "repo": "shop",
+      "branch": "main",
+      "worktree": "/src/shop",
+      "reason": "DefaultBranch"
+    },
+    {
+      "project": "shop-wip",
+      "repo": "shop",
+      "branch": "wip",
+      "worktree": "/src/shop-wip",
+      "reason": "Dirty"
+    }
+  ]
+}

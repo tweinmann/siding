@@ -55,6 +55,10 @@ const (
 	UnmergedBranch = "UnmergedBranch"
 	// DirtyWorktree: removing data refused because the worktree has changes.
 	DirtyWorktree = "DirtyWorktree"
+	// NoCapacity: the stack does not fit into the memory budget. The only code that exits 3.
+	NoCapacity = "NoCapacity"
+	// NotInteractive: a command would ask a question, but nobody can answer it.
+	NotInteractive = "NotInteractive"
 	// Internal: an unexpected error without a code of its own.
 	Internal = "Internal"
 )

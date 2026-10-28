@@ -108,6 +108,19 @@ func TestDown(t *testing.T) {
 		})
 	}
 
+	t.Run("squash-merged: upstream gone", func(t *testing.T) {
+		t.Parallel()
+		e := downEnv(t, "feat")
+		origin := filepath.Join(e.base, "origin.git")
+		e.git("init", "-q", "--bare", origin)
+		e.git("remote", "add", "origin", origin)
+		e.git("push", "-q", "-u", "origin", "feat")
+		e.git("push", "-q", "origin", "--delete", "feat") // the PR was merged and its branch deleted
+		if code, stdout, _ := e.run("down", "--volumes", "--json"); code != exitOK || !strings.Contains(stdout, "shop-feat_data") {
+			t.Errorf("exit %d, stdout %s", code, stdout)
+		}
+	})
+
 	t.Run("no stack", func(t *testing.T) {
 		t.Parallel()
 		e := newEnv(t)

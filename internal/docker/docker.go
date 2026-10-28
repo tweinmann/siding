@@ -116,6 +116,19 @@ func labelFilters(labels map[string]string) client.Filters {
 	return f
 }
 
+// MemTotal returns the memory the Docker daemon has, the VM's on Docker Desktop.
+func (c *Client) MemTotal(ctx context.Context) (int64, error) {
+	api, err := c.connect()
+	if err != nil {
+		return 0, err
+	}
+	res, err := api.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return 0, unavailable(err)
+	}
+	return res.Info.MemTotal, nil
+}
+
 // Containers returns every container, running or not, that carries all the given labels; an
 // empty value matches any value.
 func (c *Client) Containers(ctx context.Context, labels map[string]string) ([]Container, error) {
@@ -235,6 +248,56 @@ func (c *Client) EnsureNetwork(ctx context.Context, name string, labels map[stri
 		return false, fmt.Errorf("create network %s: %w", name, err)
 	}
 	return true, nil
+}
+
+// NetworkGateway returns the IPv4 gateway of a network, "" when it has none.
+func (c *Client) NetworkGateway(ctx context.Context, name string) (string, error) {
+	api, err := c.connect()
+	if err != nil {
+		return "", err
+	}
+	res, err := api.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+	if err != nil {
+		return "", fmt.Errorf("inspect network %s: %w", name, err)
+	}
+	for _, cfg := range res.Network.IPAM.Config {
+		if cfg.Gateway.Is4() {
+			return cfg.Gateway.String(), nil
+		}
+	}
+	return "", nil
+}
+
+// NetworkUsers returns the names of the containers attached to a network, and false when the
+// network does not exist.
+func (c *Client) NetworkUsers(ctx context.Context, name string) (exists bool, users []string, err error) {
+	api, err := c.connect()
+	if err != nil {
+		return false, nil, err
+	}
+	res, err := api.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+	if cerrdefs.IsNotFound(err) {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, unavailable(err)
+	}
+	for _, e := range res.Network.Containers {
+		users = append(users, e.Name)
+	}
+	return true, users, nil
+}
+
+// RemoveNetwork removes a network by its exact name.
+func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
+	api, err := c.connect()
+	if err != nil {
+		return err
+	}
+	if _, err := api.NetworkRemove(ctx, name, client.NetworkRemoveOptions{}); err != nil {
+		return fmt.Errorf("remove network %s: %w", name, err)
+	}
+	return nil
 }
 
 // Volumes returns the volumes that carry all the given labels.

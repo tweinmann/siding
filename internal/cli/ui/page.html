@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="5">
+<title>siding</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; --muted: #888; --bar: #3a7; --over: #c43; }
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 2rem auto; max-width: 70rem; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1rem; margin: 2rem 0 .5rem; }
+  .muted { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .meter { height: .6rem; background: var(--line); border-radius: .3rem; overflow: hidden; max-width: 30rem; }
+  .meter > div { height: 100%; background: var(--bar); }
+  .meter.over > div { background: var(--over); }
+  .state-partial, .state-stopped { color: var(--over); }
+</style>
+</head>
+<body>
+<h1>siding</h1>
+<p class="muted">Every stack on this machine. Refreshes every 5 seconds; read-only, act with the siding CLI.</p>
+
+<h2>Memory</h2>
+<p>{{.Used}} of {{.Budget}} ({{.Percent}} %)</p>
+<div class="meter{{if gt .Percent 100}} over{{end}}"><div style="width: {{.Bar}}%"></div></div>
+
+<h2>Stacks</h2>
+{{if .Stacks.Stacks}}
+<table>
+<tr><th>Repository</th><th>Branch</th><th>State</th><th>Address</th><th class="num">Memory</th><th>Worktree</th></tr>
+{{range .Stacks.Stacks}}
+<tr>
+  <td>{{.Repo}}</td><td>{{.Branch}}</td><td class="state-{{.State}}">{{.State}}</td>
+  <td><a href="{{.URL}}">{{.URL}}</a></td><td class="num">{{bytes .MemoryBytes}}</td>
+  <td>{{.Worktree}}{{if .WorktreeMissing}} <span class="muted">(missing)</span>{{end}}</td>
+</tr>
+{{end}}
+</table>
+{{else}}
+<p class="muted">No stacks. Start one with <code>siding up</code> in a worktree.</p>
+{{end}}
+
+<h2>Can go</h2>
+{{if .GC.Stacks}}
+<table>
+<tr><th>Stack</th><th>Branch</th><th>Reason</th><th>Removes</th></tr>
+{{range .GC.Stacks}}
+<tr>
+  <td>{{.Project}}</td><td>{{.Branch}}</td><td>{{.Reason}}</td>
+  <td>{{len .Containers}} containers, {{len .Networks}} networks, {{len .Volumes}} volumes{{if .KeptVolumes}}; keeps {{len .KeptVolumes}} volumes{{end}}</td>
+</tr>
+{{end}}
+</table>
+<p class="muted">Remove them with <code>siding gc</code>.</p>
+{{else}}
+<p class="muted">Nothing. Stacks of merged branches and deleted worktrees show up here.</p>
+{{end}}
+</body>
+</html>

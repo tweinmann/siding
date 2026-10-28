@@ -48,3 +48,26 @@ proxy SHALL reach the machine siding runs on as `host.docker.internal`.
 #### Scenario: A route left behind
 - **WHEN** `siding ui` was killed and its route file is still there
 - **THEN** the proxy answers 502 for `siding.localhost`, and the next `siding ui` replaces the file
+
+### Requirement: Teardown removes the proxy
+`siding teardown` SHALL remove `siding-proxy`, its files under `~/.siding/proxy/`, and the
+network `siding` unless a container still uses it. It MUST NOT touch any stack: running stacks
+keep running as plain Compose projects, and teardown names them. `--dry-run` removes nothing;
+with `--json` it prints a `Teardown` document.
+
+#### Scenario: Nothing runs but the proxy
+- **WHEN** `siding teardown` runs and no stack exists
+- **THEN** `siding-proxy`, the network `siding` and `~/.siding/proxy/` are gone, and `~/.siding/machine-id` stays
+
+#### Scenario: A stack still runs
+- **WHEN** `siding teardown` runs while the stack `shop-main` runs
+- **THEN** the proxy is removed, the network `siding` stays because `shop-main` uses it, `shop-main` keeps running, and the output names it with the hint `siding down` or `siding gc`
+
+#### Scenario: Dry run
+- **WHEN** `siding teardown --dry-run --json` runs
+- **THEN** it prints a `Teardown` document with `dryRun: true` listing the proxy and the network, and removes nothing
+
+#### Scenario: No proxy
+- **WHEN** `siding teardown` runs on a machine without `siding-proxy`
+- **THEN** it reports that there is nothing to remove and exits 0
+

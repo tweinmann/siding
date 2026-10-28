@@ -25,5 +25,6 @@
       "memoryBytes": 314572800
     }
   ],
-  "memoryBytes": 838860800
+  "memoryBytes": 838860800,
+  "budgetBytes": 12884901888
 }

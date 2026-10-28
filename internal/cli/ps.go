@@ -49,6 +49,13 @@ func (a *app) ps(ctx context.Context) (stackListDocument, error) {
 		return doc, err
 	}
 	port := a.shownPort(ctx)
+	proxyContainer, err := a.opts.Docker.Container(ctx, a.opts.Proxy.Container)
+	if err != nil {
+		return doc, err
+	}
+	if doc.BudgetBytes, err = a.budget(ctx, proxyContainer); err != nil {
+		return doc, err
+	}
 	projects := map[string][]docker.Container{}
 	for _, c := range cs {
 		p := c.Labels[stack.LabelProject]
@@ -118,7 +125,7 @@ func (a *app) memory(ctx context.Context, cs []docker.Container) (map[string]uin
 
 func printPsText(cmd *cobra.Command, doc stackListDocument) error {
 	if len(doc.Stacks) == 0 {
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), "No stacks. Start one with siding up in a worktree.")
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "No stacks. Start one with siding up in a worktree. Memory budget %s.\n", bytesText(uint64(doc.BudgetBytes)))
 		return err
 	}
 	rows := [][]string{{"REPO", "BRANCH", "STATE", "URL", "MEMORY", "WORKTREE"}}
@@ -129,8 +136,7 @@ func printPsText(cmd *cobra.Command, doc stackListDocument) error {
 		}
 		rows = append(rows, []string{s.Repo, s.Branch, s.State, s.URL, bytesText(s.MemoryBytes), worktree})
 	}
-	rows = append(rows, []string{"total", "", "", "", bytesText(doc.MemoryBytes), ""})
-	_, err := fmt.Fprint(cmd.OutOrStdout(), table("", rows))
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%stotal: %s of %s\n", table("", rows), bytesText(doc.MemoryBytes), bytesText(uint64(doc.BudgetBytes)))
 	return err
 }
 

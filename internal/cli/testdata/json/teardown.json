@@ -1,0 +1,6 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Teardown",
+  "container": "siding-proxy",
+  "network": "siding"
+}

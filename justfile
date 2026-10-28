@@ -33,6 +33,13 @@ golden:
 build:
     CGO_ENABLED=0 go build -trimpath -o bin/siding ./cmd/siding
 
+# Build static macOS binaries into bin/ (siding-darwin-arm64, siding-darwin-amd64), to try
+# siding on the Mac against Docker Desktop; bin/ is in the repository folder, so on the Mac too
+build-darwin:
+    for arch in arm64 amd64; do \
+      GOOS=darwin GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o bin/siding-darwin-$arch ./cmd/siding; \
+    done
+
 # Inner daemon: a compose project with a healthcheck, ports reset by an override, Traefik routing
 smoke-docker:
     hack/smoke/docker.sh

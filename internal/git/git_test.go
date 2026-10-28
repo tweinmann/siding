@@ -113,46 +113,74 @@ func TestDirty(t *testing.T) {
 	}
 }
 
-func TestMerged(t *testing.T) {
+func TestMergeState(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	t.Run("merged and unmerged against main", func(t *testing.T) {
-		t.Parallel()
-		dir := newRepo(t)
-		sh(t, dir, "branch", "done")
-		sh(t, dir, "switch", "-q", "-c", "wip")
-		sh(t, dir, "commit", "-q", "--allow-empty", "-m", "wip")
-		for branch, want := range map[string]bool{"done": true, "wip": false, "main": true} {
-			merged, base, err := Client{}.Merged(ctx, dir, branch)
-			if err != nil || merged != want || base != "refs/heads/main" {
-				t.Errorf("%s: merged %v, base %q, err %v; want %v against refs/heads/main", branch, merged, base, err, want)
+	// shop: main, "fresh" at main's tip, "done" merged with main one commit further, "wip"
+	// with a commit of its own.
+	dir := newRepo(t)
+	sh(t, dir, "branch", "done")
+	sh(t, dir, "commit", "-q", "--allow-empty", "-m", "after done")
+	sh(t, dir, "branch", "fresh")
+	sh(t, dir, "switch", "-q", "-c", "wip")
+	sh(t, dir, "commit", "-q", "--allow-empty", "-m", "wip")
+	sh(t, dir, "switch", "-q", "main")
+
+	// clone: "feat" tracked a remote branch that was squash-merged and deleted, then pruned.
+	origin := newRepo(t)
+	sh(t, origin, "switch", "-q", "-c", "feat")
+	sh(t, origin, "commit", "-q", "--allow-empty", "-m", "feat")
+	sh(t, origin, "switch", "-q", "main")
+	clone := filepath.Join(t.TempDir(), "clone")
+	sh(t, filepath.Dir(clone), "clone", "-q", origin, clone)
+	sh(t, clone, "switch", "-q", "feat")
+	sh(t, clone, "switch", "-q", "main")
+	sh(t, origin, "branch", "-q", "-D", "feat")
+	sh(t, clone, "fetch", "-q", "--prune")
+
+	// gone: the worktree of a merged branch was deleted without git; only its git dir is left.
+	gone := newRepo(t)
+	wt := filepath.Join(t.TempDir(), "gone-wt")
+	sh(t, gone, "worktree", "add", "-q", "-b", "old", wt)
+	sh(t, gone, "commit", "-q", "--allow-empty", "-m", "main moved on")
+	if err := os.RemoveAll(wt); err != nil {
+		t.Fatal(err)
+	}
+
+	noBase := filepath.Join(t.TempDir(), "r")
+	if err := os.MkdirAll(noBase, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sh(t, noBase, "init", "-q", "-b", "trunk")
+	sh(t, noBase, "commit", "-q", "--allow-empty", "-m", "first")
+
+	tests := []struct {
+		name          string
+		repo          Repo
+		branch        string
+		merged, forGC bool
+		base          string
+	}{
+		{name: "a fresh branch is merged but not for gc", repo: Repo{Dir: dir}, branch: "fresh", merged: true, base: "refs/heads/main"},
+		{name: "merged and main moved on", repo: Repo{Dir: dir}, branch: "done", merged: true, forGC: true, base: "refs/heads/main"},
+		{name: "own commits", repo: Repo{Dir: dir}, branch: "wip", base: "refs/heads/main"},
+		{name: "the default branch", repo: Repo{Dir: dir}, branch: "main", merged: true, base: "refs/heads/main"},
+		{name: "upstream gone after a squash merge", repo: Repo{Dir: clone}, branch: "feat", merged: true, forGC: true, base: "refs/remotes/origin/main"},
+		{name: "the worktree is gone", repo: Repo{GitDir: filepath.Join(gone, ".git")}, branch: "old", merged: true, forGC: true, base: "refs/heads/main"},
+		{name: "the branch is gone", repo: Repo{Dir: dir}, branch: "nope"},
+		{name: "no default branch", repo: Repo{Dir: noBase}, branch: "trunk"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, err := Client{}.MergeState(ctx, tt.repo, tt.branch)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-	})
-
-	t.Run("origin/HEAD wins", func(t *testing.T) {
-		t.Parallel()
-		origin := newRepo(t)
-		clone := filepath.Join(t.TempDir(), "clone")
-		sh(t, filepath.Dir(clone), "clone", "-q", origin, clone)
-		merged, base, err := Client{}.Merged(ctx, clone, "main")
-		if err != nil || !merged || base != "refs/remotes/origin/main" {
-			t.Errorf("merged %v, base %q, err %v; want true against refs/remotes/origin/main", merged, base, err)
-		}
-	})
-
-	t.Run("no default branch", func(t *testing.T) {
-		t.Parallel()
-		dir := filepath.Join(t.TempDir(), "r")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		sh(t, dir, "init", "-q", "-b", "trunk")
-		sh(t, dir, "commit", "-q", "--allow-empty", "-m", "first")
-		merged, base, err := Client{}.Merged(ctx, dir, "trunk")
-		if err != nil || merged || base != "" {
-			t.Errorf("merged %v, base %q, err %v; want unmerged without a base", merged, base, err)
-		}
-	})
+			if m.Merged() != tt.merged || m.MergedForGC() != tt.forGC || m.Base != tt.base {
+				t.Errorf("%+v: merged %v, for gc %v; want %v, %v, base %q", m, m.Merged(), m.MergedForGC(), tt.merged, tt.forGC, tt.base)
+			}
+		})
+	}
 }

@@ -17,8 +17,11 @@ changing architecture.
 Phase 0 approved (2026-10-28). Phase 1 (v0.1) approved and archived (2026-10-28,
 `openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing`): `setup`, `up [--wait]`,
 `status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`, `skill`, routing by host and path
-through `siding-proxy`, `just smoke-stacks`. Next: Phase 2 (`phase-2-overview-and-budget`,
-v0.2), starting with `/opsx:propose`.
+through `siding-proxy`, `just smoke-stacks`. Phase 2 (`phase-2-overview-and-budget`, v0.2)
+implemented, waiting for approval (2026-10-28), not yet archived: `siding ui` at
+`siding.localhost`, the memory budget (`setup --budget`, `up` exits 3), `gc`, `lint`,
+`teardown`, `just build-darwin`; tested by hand in the devcontainer and on the Mac with Docker Desktop.
+After approval: `/opsx:archive`, then Phase 3 (`phase-3-snapshots-and-queue`, v0.3).
 
 ## Working agreements
 
@@ -63,6 +66,9 @@ v0.2), starting with `/opsx:propose`.
 - Removable. Uninstalling siding leaves plain Compose projects that keep running.
 - Not an agent manager, not a sandbox for the agent, not Kubernetes, not production, not a
   hot-reload tool (Compose `develop.watch` is passed through).
+- In a devcontainer, Docker-in-Docker only: no Docker-outside-of-Docker, neither for this
+  repository's devcontainer nor as a supported setup for users, because the host's Docker socket
+  is root on the host.
 
 ## Dev environment
 
@@ -83,6 +89,7 @@ requests and on `main`, all inside the devcontainer image.
 | `just test` | devcontainer | level-1 checks, as in CI: gofmt, vet, `go test -race`, golangci-lint, `openspec validate --all --strict` |
 | `just golden` | devcontainer | rewrite golden files after an intended change |
 | `just build` | devcontainer | build a static `bin/siding` (linux) |
+| `just build-darwin` | devcontainer | build `bin/siding-darwin-arm64` and `-amd64`, to try siding on the Mac against Docker Desktop (product use, not development) |
 | `just smoke-docker` | devcontainer | inner daemon: compose project with two services and healthchecks, `ports: !reset []`, Traefik on `siding` routing `demo.main.localhost` at `/` and `/api` |
 | `just smoke-stacks` | devcontainer | inner daemon: siding's own commands end to end (`internal/e2e`, build tag `docker`): setup, `up --wait`, routing, a Failed verdict with log tail, `ps`, `down`, the guard of `down --volumes`; also checks golden overrides with `docker compose config` |
 | `bin/siding setup --port 8080` | devcontainer | the real `siding-proxy` on the forwarded port, to try siding by hand |
@@ -101,6 +108,10 @@ requests and on `main`, all inside the devcontainer image.
   (devcontainer, its images and volumes). Delete them by exact name — never by prefix, never
   with `prune`. New host objects go into that spec, `hack/nuke.sh` and (for volumes)
   `devcontainer.json` together, in one change.
+- Running siding on the host (e.g. `bin/siding-darwin-arm64` from `just build-darwin`) is use
+  of the product, not development: what it creates there (`siding-proxy`, the network
+  `siding`, the user's stacks, `~/.siding`) is not development footprint. `hack/nuke.sh` never
+  removes it; siding's own commands and `docker compose -p siding down` do.
 - Tests create stacks only as Compose projects with the prefix `siding-test-` and remove them by
   their exact name. The smoke tests' proxies listen on 18080, never on 8080; the end-to-end
   tests run their own proxy `siding-test-e2e-proxy` on the network `siding-test-e2e`, so a
@@ -118,10 +129,13 @@ requests and on `main`, all inside the devcontainer image.
 - Module `github.com/tweinmann/siding`, binary `siding`, API version `siding.dev/v1alpha1`.
 - Labels on every container, network and volume siding creates or adopts: `dev.siding.repo`,
   `dev.siding.branch`, `dev.siding.worktree` (absolute path), `dev.siding.machine` (stable
-  machine id); on containers also `dev.siding.agent` (optional; never on networks or volumes,
-  whose labels must not change between two `up`s). Service labels: `dev.siding.route`
-  (`/`, `/<path>`, `false`), `dev.siding.port` (the HTTP port of a service with several),
-  `dev.siding.seed` (`volume|script|none`). Volume label `dev.siding.shared`.
+  machine id); on containers also `dev.siding.gitdir` (the repository's common git directory)
+  and `dev.siding.agent` (optional), never on networks or volumes, whose labels must not change
+  between two `up`s. Service labels: `dev.siding.route` (`/`, `/<path>`, `false`),
+  `dev.siding.port` (the HTTP port of a service with several), `dev.siding.seed`
+  (`volume|script|none`). Volume label `dev.siding.shared`. On `siding-proxy`:
+  `dev.siding.budget` (the memory budget in bytes) and `dev.siding.host-alias` (what
+  `host.docker.internal` resolves to in the proxy).
 - Compose project `<repo>-<branch-slug>`, host `<repo>.<branch-slug>.localhost`, proxy
   `siding-proxy` on the network `siding`, override `.siding/override.yml`.
 - Docker state is read through the Docker Engine API (Go SDK); lifecycle operations invoke

@@ -1,4 +1,5 @@
 {
   "apiVersion": "siding.dev/v1alpha1",
-  "kind": "StackList"
+  "kind": "StackList",
+  "budgetBytes": 12884901888
 }

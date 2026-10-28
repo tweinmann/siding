@@ -47,6 +47,11 @@ once:
   host.docker.internal:host-gateway`, and `siding ui` listens on `127.0.0.1`, which these VMs
   forward to.
 
+`setup` stores its choice as the label `dev.siding.host-alias` on `siding-proxy` (the gateway's
+address, or `host-gateway`), so `siding ui` reads from Docker where to listen, and a proxy
+without the label (from v0.1) is one that needs `siding setup`. Whether the gateway belongs to
+this machine is a seam in `cli.Options` (`IsLocalAddress`).
+
 Tried in the inner daemon before this proposal: `host-gateway` resolves to the default
 bridge's gateway, not the proxy network's, and gave 502; the pinned gateway gave 200, and
 removing the file gave 404 within two seconds. The VM case is tested by hand on the Mac
@@ -139,6 +144,16 @@ cache).
 ### D11. Error codes and exit 3
 `NoCapacity` is the first error that does not exit 1: `Execute` maps it to exit 3, with the
 usual `Error` document. `NotInteractive` is a normal error (exit 1).
+
+### D12. `siding teardown` (added during apply, at the maintainer's request)
+The counterpart of `setup`: `docker compose -p siding down --remove-orphans` from the proxy's
+directory, then that directory, then the network `siding` through the API, but only when no
+container is attached to it. It never touches stacks; they keep running as plain Compose
+projects (the guardrail "removable"), and teardown lists them with the hint `siding down` or
+`siding gc`. `~/.siding/machine-id` stays, so stacks started later carry the same machine id.
+Alternatives: refuse while stacks exist (forces removing work to uninstall the proxy); also
+remove the stacks (would remove data and break "never lose work"); remove all of `~/.siding`
+(changes the machine id of stacks that still run).
 
 ## Risks / Trade-offs
 

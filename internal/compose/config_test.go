@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tweinmann/siding/internal/fail"
@@ -123,4 +124,68 @@ func codeOf(err error) string {
 		return e.Code
 	}
 	return ""
+}
+
+// testdata/lint/config.json is captured like testdata/routing/config.json, from
+// testdata/lint/compose.yaml, with the capturing directory replaced by /src/shop.
+func TestParseConfigDetails(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("testdata", "lint", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := ParseConfig(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const mib = 1 << 20
+	tests := []struct {
+		name          string
+		containerName string
+		binds         []string
+		published     []int
+		healthcheck   bool
+		memoryLimit   int64
+		replicas      int
+	}{
+		{name: "web", healthcheck: true, memoryLimit: 512 * mib, replicas: 2},
+		{name: "db", containerName: "shop-db", binds: []string{"/var/lib/shop", "/src/shop/init"}, published: []int{5432}, memoryLimit: 1024 * mib, replicas: 1},
+		{name: "worker", replicas: 3},
+		{name: "tools", replicas: 1},
+	}
+	for _, want := range tests {
+		s := p.Services[want.name]
+		if s.ContainerName != want.containerName || !reflect.DeepEqual(s.Binds, want.binds) || !reflect.DeepEqual(s.Published, want.published) ||
+			s.Healthcheck != want.healthcheck || s.MemoryLimit != want.memoryLimit || s.Replicas != want.replicas {
+			t.Errorf("%s: %+v\nwant %+v", want.name, s, want)
+		}
+	}
+	if got := p.Volumes["cache"]; got.Name != "pip-cache" || got.Labels["dev.siding.shared"] != "true" {
+		t.Errorf("volume cache %+v", got)
+	}
+	if got := p.Volumes["pgdata"]; got.Name != "shop-pgdata" || len(got.Labels) != 0 {
+		t.Errorf("volume pgdata %+v", got)
+	}
+	if got := p.Networks["shared"]; got.Name != "everyone" {
+		t.Errorf("network shared %+v", got)
+	}
+}
+
+func TestErrorLines(t *testing.T) {
+	t.Parallel()
+	out := ` Container demo-db Creating 
+ service:db:1 Error response from daemon: Conflict. The container name "/demo-db" is already in use. 
+Error response from daemon: Conflict. The container name "/demo-db" is already in use.
+`
+	if got, want := errorLines(out), `Error response from daemon: Conflict. The container name "/demo-db" is already in use.`; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	pull := " traefik Pulling \n traefik Error Get \"https://registry-1.docker.io/v2/\": net/http: TLS handshake timeout\n" +
+		"Error response from daemon: Get \"https://registry-1.docker.io/v2/\": net/http: TLS handshake timeout\n"
+	if got := errorLines(pull); strings.Contains(got, "Pulling") || !strings.Contains(got, "TLS handshake timeout") {
+		t.Errorf("a failed pull: %q", got)
+	}
+	if got := errorLines(" Network x_default Creating\nno such service: nope\n"); got != "no such service: nope" {
+		t.Errorf("without an error line: %q", got)
+	}
 }

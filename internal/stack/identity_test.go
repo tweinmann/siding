@@ -77,6 +77,13 @@ func TestIdentity(t *testing.T) {
 	if _, ok := id.Labels()[LabelAgent]; ok {
 		t.Error("networks and volumes must not carry the agent label")
 	}
+	id.GitDir = "/src/shop/.git"
+	if got := id.ContainerLabels()[LabelGitDir]; got != "/src/shop/.git" {
+		t.Errorf("gitdir label = %q", got)
+	}
+	if _, ok := id.Labels()[LabelGitDir]; ok {
+		t.Error("networks and volumes must not carry the gitdir label")
+	}
 	if got := FromLabels(id.ContainerLabels()); got != id {
 		t.Errorf("FromLabels = %+v, want %+v", got, id)
 	}

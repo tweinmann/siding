@@ -6,5 +6,6 @@
   "image": "traefik:v3.7.16",
   "port": 80,
   "url": "http://*.localhost/",
-  "state": "created"
+  "state": "created",
+  "budgetBytes": 12884901888
 }
