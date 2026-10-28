@@ -101,6 +101,12 @@ Generated from the normalised config, written as YAML with `!reset` tags:
   to responses (D9);
 - top-level: labels on the project's own networks (`default` included) and named volumes, not
   on external ones; the network `siding` as external.
+
+Network and volume labels never change between two `up`s of one stack: Compose 5.6 recreates
+a network whose labels changed, stopping its containers, and keeps a volume's first labels.
+So `dev.siding.agent`, which may differ from one `up` to the next, goes on containers only;
+the other labels are fixed for a project (D5 refuses a second branch or worktree). Compose
+always runs with stdin closed, so a confirmation prompt fails instead of hanging.
 Golden files under `internal/stack/testdata/override/` hold input config and expected override.
 
 HTTP detection, asked: exactly one container port from `ports` targets and `expose`, or
@@ -126,8 +132,9 @@ the service's own when it carries `X-Siding-Service` for that service and its st
 for an unreachable backend do not count. The probe follows no redirects; a 3xx counts.
 Alternatives: any status below 500 (cannot tell Traefik's 404 from the app's); asking
 Traefik's API whether the router exists (needs a second published port). The end-to-end test
-checks that Traefik really adds the header to backend responses and not to its own errors;
-if it adds it to its 502 too, the status check still rules those out.
+shows that Traefik 3.7 adds the header to its own 502 as well (the middleware runs before the
+backend fails), so the status rule is what rules those out; its 404 for an unknown host has
+no header.
 
 ### D10. Verdict
 A pure function from (services in the config, containers with state, health, exit code,
@@ -157,11 +164,14 @@ precise: it guards a stack's data and worktrees, not containers. CLAUDE.md and
 is the way until `gc` (v0.2) learns more.
 
 ### D12. Redaction
-Values from the worktree's `.env` and from every `env_file` in the normalised config, 4
-characters or longer, longest first, are replaced by `***` in every log line siding puts into a
-document. The `.env` is parsed with Compose's rules for `KEY=VALUE`, quotes and comments; no
-values are logged or cached. Shorter values are left, since `***` for `1` or `on` would wreck
-every line. Text output of `siding logs` stays raw: it is the user's own terminal, as with
+Values from the worktree's `.env` and every service's `environment` in the normalised config,
+4 characters or longer, longest first, are replaced by `***` in every log line siding puts
+into a document. The normalised config no longer names `env_file`s (Compose 5.6 inlines their
+values into `environment`, also with `--no-normalize`), so redacting all of `environment`
+covers them and inline values too. Numbers and `true`, `false`, `yes`, `no`, `on`, `off` are
+left, as are values shorter than 4 characters, since `***` for them would wreck every line.
+The `.env` is parsed with Compose's rules for `KEY=VALUE`, `export`, quotes and comments; no
+values are logged or cached. Text output of `siding logs` stays raw: it is the user's own terminal, as with
 `docker compose logs`.
 
 ### D13. `siding skill` (decided here, open for review)
@@ -179,6 +189,15 @@ real implementations; unit tests use fakes. The end-to-end tests under `internal
 network `siding-test` at port 18080, in temporary git repositories whose `--repo` starts with
 `siding-test-`, and remove everything by exact name in `t.Cleanup`. So the binary has no hidden
 test switches, and a developer's `siding-proxy` in the devcontainer is never touched.
+
+### D15. No silent port remap in the devcontainer (maintainer's decision)
+VS Code forwards a port to another host port when the requested one is taken, without asking:
+in the manual test it forwarded 8080 to 8081, and every address siding printed (`:8080`) was
+wrong. `"requireLocalPort": true` on 8080 makes VS Code report the conflict instead. Someone
+who cannot free 8080 changes the port in `forwardPorts` and `portsAttributes` and runs
+`siding setup --port` with the same number. Alternatives: leave the remap and document "look
+in the PORTS tab" (every printed address stays wrong); let siding learn the host port (siding
+cannot see VS Code's forwarding, and v0.1 has no configuration for an address prefix).
 
 ## Risks / Trade-offs
 

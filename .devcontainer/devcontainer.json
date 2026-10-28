@@ -39,10 +39,13 @@
   ],
 
   // The proxy (Traefik) listens on 8080 of the inner daemon; this forwards it to the host, so
-  // http://<host>.localhost:8080 reaches a stack from the browser.
+  // http://<host>.localhost:8080 reaches a stack from the browser. requireLocalPort: when 8080
+  // is taken on the host, VS Code says so instead of forwarding to another port, which would
+  // make every address siding prints wrong. To use another port, change both numbers here and
+  // run siding setup --port with it.
   "forwardPorts": [8080],
   "portsAttributes": {
-    "8080": { "label": "siding proxy", "onAutoForward": "silent" }
+    "8080": { "label": "siding proxy", "onAutoForward": "silent", "requireLocalPort": true }
   },
 
   // Worktrees with relative paths work both inside the container and on the host.

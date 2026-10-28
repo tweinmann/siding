@@ -76,8 +76,8 @@ with another `dev.siding.worktree` or `dev.siding.branch` label, `up` MUST fail 
 ### Requirement: Labels
 siding SHALL label every container, network and volume of a stack with `dev.siding.repo`,
 `dev.siding.branch` (the branch name, not the slug), `dev.siding.worktree` (absolute path) and
-`dev.siding.machine`, and with `dev.siding.agent` when `--agent` or `SIDING_AGENT` names one.
-External networks and volumes MUST NOT be relabelled.
+`dev.siding.machine`, and its containers with `dev.siding.agent` when `--agent` or
+`SIDING_AGENT` names one. External networks and volumes MUST NOT be relabelled.
 
 #### Scenario: Labels on a running stack
 - **WHEN** `siding up` has run in `/src/shop-login` on branch `feature/login`

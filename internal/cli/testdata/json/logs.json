@@ -1,0 +1,27 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Logs",
+  "stack": {
+    "project": "shop-main",
+    "repo": "shop",
+    "branch": "main",
+    "worktree": "/src/shop",
+    "url": "http://shop.main.localhost/"
+  },
+  "services": [
+    {
+      "name": "api",
+      "lines": [
+        "token *** accepted",
+        "three"
+      ]
+    },
+    {
+      "name": "db",
+      "lines": [
+        "listening on 5432",
+        "password ***"
+      ]
+    }
+  ]
+}

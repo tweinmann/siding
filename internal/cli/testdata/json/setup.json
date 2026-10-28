@@ -1,0 +1,10 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Setup",
+  "container": "siding-proxy",
+  "network": "siding",
+  "image": "traefik:v3.7.16",
+  "port": 80,
+  "url": "http://*.localhost/",
+  "state": "created"
+}

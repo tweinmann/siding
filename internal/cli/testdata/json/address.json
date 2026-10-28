@@ -1,0 +1,6 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Address",
+  "url": "http://api.shop.main.localhost/",
+  "service": "api"
+}

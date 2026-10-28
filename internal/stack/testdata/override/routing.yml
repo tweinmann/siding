@@ -1,0 +1,134 @@
+# Written by siding for the Compose project shop-main. Do not edit: siding up rewrites it.
+services:
+  "admin":
+    ports: !reset []
+    labels:
+      "dev.siding.agent": "claude"
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+  "api":
+    ports: !reset []
+    networks:
+      "backend": {}
+      "default": {}
+      siding_proxy: {}
+    labels:
+      "dev.siding.agent": "claude"
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+      "traefik.docker.network": "siding"
+      "traefik.enable": "true"
+      "traefik.http.middlewares.shop-main-api-id.headers.customresponseheaders.X-Siding-Service": "shop-main/api"
+      "traefik.http.routers.shop-main-api-route.entrypoints": "web"
+      "traefik.http.routers.shop-main-api-route.middlewares": "shop-main-api-id"
+      "traefik.http.routers.shop-main-api-route.rule": "Host(`shop.main.localhost`) && PathPrefix(`/api`)"
+      "traefik.http.routers.shop-main-api-route.service": "shop-main-api"
+      "traefik.http.routers.shop-main-api.entrypoints": "web"
+      "traefik.http.routers.shop-main-api.middlewares": "shop-main-api-id"
+      "traefik.http.routers.shop-main-api.rule": "Host(`api.shop.main.localhost`)"
+      "traefik.http.routers.shop-main-api.service": "shop-main-api"
+      "traefik.http.services.shop-main-api.loadbalancer.server.port": "8080"
+  "db":
+    ports: !reset []
+    networks:
+      "backend": {}
+      siding_proxy: {}
+    labels:
+      "dev.siding.agent": "claude"
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+      "traefik.docker.network": "siding"
+      "traefik.enable": "true"
+      "traefik.http.middlewares.shop-main-db-id.headers.customresponseheaders.X-Siding-Service": "shop-main/db"
+      "traefik.http.routers.shop-main-db.entrypoints": "web"
+      "traefik.http.routers.shop-main-db.middlewares": "shop-main-db-id"
+      "traefik.http.routers.shop-main-db.rule": "Host(`db.shop.main.localhost`)"
+      "traefik.http.routers.shop-main-db.service": "shop-main-db"
+      "traefik.http.services.shop-main-db.loadbalancer.server.port": "5432"
+  "mail":
+    ports: !reset []
+    networks:
+      "default": {}
+      siding_proxy: {}
+    labels:
+      "dev.siding.agent": "claude"
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+      "traefik.docker.network": "siding"
+      "traefik.enable": "true"
+      "traefik.http.middlewares.shop-main-mail-id.headers.customresponseheaders.X-Siding-Service": "shop-main/mail"
+      "traefik.http.routers.shop-main-mail.entrypoints": "web"
+      "traefik.http.routers.shop-main-mail.middlewares": "shop-main-mail-id"
+      "traefik.http.routers.shop-main-mail.rule": "Host(`mail.shop.main.localhost`)"
+      "traefik.http.routers.shop-main-mail.service": "shop-main-mail"
+      "traefik.http.services.shop-main-mail.loadbalancer.server.port": "8025"
+  "tools":
+    ports: !reset []
+    labels:
+      "dev.siding.agent": "claude"
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+  "web":
+    ports: !reset []
+    networks:
+      "default": {}
+      siding_proxy: {}
+    labels:
+      "dev.siding.agent": "claude"
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+      "traefik.docker.network": "siding"
+      "traefik.enable": "true"
+      "traefik.http.middlewares.shop-main-web-id.headers.customresponseheaders.X-Siding-Service": "shop-main/web"
+      "traefik.http.routers.shop-main-web-route.entrypoints": "web"
+      "traefik.http.routers.shop-main-web-route.middlewares": "shop-main-web-id"
+      "traefik.http.routers.shop-main-web-route.rule": "Host(`shop.main.localhost`)"
+      "traefik.http.routers.shop-main-web-route.service": "shop-main-web"
+      "traefik.http.routers.shop-main-web.entrypoints": "web"
+      "traefik.http.routers.shop-main-web.middlewares": "shop-main-web-id"
+      "traefik.http.routers.shop-main-web.rule": "Host(`web.shop.main.localhost`)"
+      "traefik.http.routers.shop-main-web.service": "shop-main-web"
+      "traefik.http.services.shop-main-web.loadbalancer.server.port": "3000"
+  "worker":
+    ports: !reset []
+    labels:
+      "dev.siding.agent": "claude"
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+networks:
+  "backend":
+    labels:
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+  "default":
+    labels:
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"
+  siding_proxy:
+    name: "siding"
+    external: true
+volumes:
+  "data":
+    labels:
+      "dev.siding.branch": "main"
+      "dev.siding.machine": "0123456789abcdef"
+      "dev.siding.repo": "shop"
+      "dev.siding.worktree": "/src/shop"

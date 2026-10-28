@@ -64,8 +64,8 @@ lines of that service.
 ### Requirement: Waiting
 `siding status --wait` SHALL check until the verdict is `Ready` or `Failed`, at most for
 `--timeout` (default 3 minutes). When the time is up it SHALL report `TimedOut`, naming the
-first service that is not ready, with reason, hint and log tail; a routed service that never
-answered gets the reason `NotAnswering`.
+first service that is not ready, with reason, hint and log tail: `NotAnswering` for a routed
+service that never answered, `NotReady` for one that is still starting.
 
 #### Scenario: Ready in time
 - **WHEN** `siding status --wait --timeout 60s` runs and the stack becomes ready after 20 seconds

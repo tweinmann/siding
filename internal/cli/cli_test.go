@@ -2,8 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/tweinmann/siding/internal/fail"
 
 	"github.com/tweinmann/siding/internal/testutil"
 )
@@ -17,7 +23,7 @@ var testBuild = BuildInfo{
 
 func run(args ...string) (code int, stdout, stderr string) {
 	var out, errOut bytes.Buffer
-	code = Execute(New(Options{Build: testBuild}), args, &out, &errOut)
+	code = Execute(context.Background(), New(Options{Build: testBuild}), args, &out, &errOut)
 	return code, out.String(), errOut.String()
 }
 
@@ -96,5 +102,83 @@ func TestErrorDocumentOnFlagError(t *testing.T) {
 	want := "{\n  \"apiVersion\": \"siding.dev/v1alpha1\",\n  \"kind\": \"Error\",\n  \"code\": \"InvalidArguments\",\n  \"message\": \"unknown flag: --nope\"\n}\n"
 	if stdout != want {
 		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+}
+
+// Every error code reaches the user the same way: one line and a hint on stderr, or an Error
+// document with code, message and hint on stdout.
+func TestErrorCodes(t *testing.T) {
+	t.Parallel()
+	codes := []string{
+		fail.InvalidArguments, fail.NotAGitRepository, fail.NoBranch, fail.ComposeFileNotFound,
+		fail.ComposeFailed, fail.DockerUnavailable, fail.ProxyNotRunning, fail.PortInUse,
+		fail.InvalidRoute, fail.AmbiguousPort, fail.SlugCollision, fail.StackNotFound,
+		fail.UnmergedBranch, fail.DirtyWorktree, fail.Internal,
+	}
+	for _, code := range codes {
+		t.Run(code, func(t *testing.T) {
+			t.Parallel()
+			root := &cobra.Command{Use: "siding", SilenceUsage: true, SilenceErrors: true}
+			var asJSON bool
+			sub := &cobra.Command{Use: "boom", RunE: func(*cobra.Command, []string) error {
+				return fail.New(code, "it broke").WithHint("try again")
+			}}
+			registerJSON(sub, &asJSON)
+			root.AddCommand(sub)
+
+			var out, errOut bytes.Buffer
+			if got := Execute(context.Background(), root, []string{"boom"}, &out, &errOut); got != exitFailed {
+				t.Errorf("exit code %d", got)
+			}
+			if out.String() != "" || errOut.String() != "error: it broke\nhint: try again\n" {
+				t.Errorf("text: stdout %q, stderr %q", out.String(), errOut.String())
+			}
+
+			out.Reset()
+			errOut.Reset()
+			root.SetArgs(nil)
+			Execute(context.Background(), root, []string{"boom", "--json"}, &out, &errOut)
+			want := "{\n  \"apiVersion\": \"siding.dev/v1alpha1\",\n  \"kind\": \"Error\",\n  \"code\": \"" + code +
+				"\",\n  \"message\": \"it broke\",\n  \"hint\": \"try again\"\n}\n"
+			if out.String() != want || errOut.String() != "" {
+				t.Errorf("json: stdout %s, stderr %q", out.String(), errOut.String())
+			}
+		})
+	}
+}
+
+// A command that printed a verdict ends with its exit code and nothing more.
+func TestExitCodes(t *testing.T) {
+	t.Parallel()
+	for _, code := range []int{exitFailed, exitTimedOut, exitNoCapacity} {
+		root := &cobra.Command{Use: "siding", SilenceUsage: true, SilenceErrors: true}
+		root.AddCommand(&cobra.Command{Use: "verdict", RunE: func(*cobra.Command, []string) error { return exitCode(code) }})
+		var out, errOut bytes.Buffer
+		if got := Execute(context.Background(), root, []string{"verdict"}, &out, &errOut); got != code || out.Len()+errOut.Len() != 0 {
+			t.Errorf("exit code %d (want %d), output %q %q", got, code, out.String(), errOut.String())
+		}
+	}
+	// An error without a code is still reported in the same shape.
+	root := &cobra.Command{Use: "siding", SilenceUsage: true, SilenceErrors: true}
+	root.AddCommand(&cobra.Command{Use: "oops", RunE: func(*cobra.Command, []string) error { return errors.New("disk full") }})
+	var out, errOut bytes.Buffer
+	if got := Execute(context.Background(), root, []string{"oops"}, &out, &errOut); got != exitFailed || errOut.String() != "error: disk full\n" {
+		t.Errorf("exit code %d, stderr %q", got, errOut.String())
+	}
+}
+
+// Ctrl-C ends a command quietly with 130, e.g. logs --follow.
+func TestInterrupted(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	root := &cobra.Command{Use: "siding", SilenceUsage: true, SilenceErrors: true}
+	root.AddCommand(&cobra.Command{Use: "follow", RunE: func(cmd *cobra.Command, _ []string) error {
+		cancel()
+		<-cmd.Context().Done()
+		return cmd.Context().Err()
+	}})
+	var out, errOut bytes.Buffer
+	if got := Execute(ctx, root, []string{"follow"}, &out, &errOut); got != exitInterrupted || out.Len()+errOut.Len() != 0 {
+		t.Errorf("exit code %d, output %q %q", got, out.String(), errOut.String())
 	}
 }

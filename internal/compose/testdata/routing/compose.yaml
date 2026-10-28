@@ -1,0 +1,40 @@
+# Every case the parser and the routing table must handle.
+services:
+  web:
+    image: busybox:1.37.0
+    ports: ["3000:3000"]
+    labels: [dev.siding.route=/]
+    healthcheck: {test: ["CMD", "true"]}
+    environment:
+      NODE_ENV: development
+      DB_URL: postgres://app:${DB_PASSWORD}@db/app
+  api:
+    image: busybox:1.37.0
+    expose: ["8080", "9229"]
+    env_file: api.env
+    networks: [backend, default]
+    labels: {dev.siding.route: /api, dev.siding.port: "8080"}
+  mail:
+    image: busybox:1.37.0
+    expose: ["8025/tcp", "1025/udp"]
+  admin:
+    image: busybox:1.37.0
+    ports: ["127.0.0.1:9000:80"]
+    labels: {dev.siding.route: "false"}
+  db:
+    image: busybox:1.37.0
+    ports: ["5432:5432"]
+    volumes: [data:/var/lib/data, shared:/shared]
+    networks:
+      backend: {aliases: [database]}
+  worker:
+    image: busybox:1.37.0
+  tools:
+    image: busybox:1.37.0
+    network_mode: host
+    expose: ["7000-7001"]
+networks:
+  backend: {}
+volumes:
+  data: {}
+  shared: {external: true, name: shared-cache}

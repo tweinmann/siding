@@ -1,0 +1,46 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Status",
+  "verdict": "TimedOut",
+  "stack": {
+    "project": "shop-main",
+    "repo": "shop",
+    "branch": "main",
+    "worktree": "/src/shop",
+    "url": "http://shop.main.localhost/"
+  },
+  "services": [
+    {
+      "name": "api",
+      "state": "running",
+      "route": "/api",
+      "url": "http://api.shop.main.localhost/",
+      "answering": true,
+      "ready": true
+    },
+    {
+      "name": "db",
+      "state": "running",
+      "ready": true
+    },
+    {
+      "name": "mail",
+      "state": "running",
+      "url": "http://mail.shop.main.localhost/",
+      "ready": true
+    },
+    {
+      "name": "web",
+      "state": "running",
+      "route": "/",
+      "url": "http://web.shop.main.localhost/",
+      "answering": false,
+      "ready": false
+    }
+  ],
+  "failure": {
+    "service": "web",
+    "reason": "NotAnswering",
+    "hint": "it runs, but http://shop.main.localhost/ does not answer through the proxy; check that it listens on port 3000 on 0.0.0.0, not only on 127.0.0.1"
+  }
+}

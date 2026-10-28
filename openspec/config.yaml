@@ -21,8 +21,8 @@ context: |
   - Humans see what runs, what it costs and what can go after a merge.
   - A memory budget keeps the machine usable; later, stacks can run on a remote Docker host.
 
-  Status: pre-alpha. Phase 0 (repository, devcontainer, OpenSpec, CI) is done; `siding version`
-  is the only command. OpenSpec is the only planning source: `openspec/specs/` is what siding
+  Status: pre-alpha. Phase 0 (repository, devcontainer, OpenSpec, CI) is done; Phase 1 (v0.1:
+  stacks per worktree, routing through siding-proxy, the verdict of status) is implemented. OpenSpec is the only planning source: `openspec/specs/` is what siding
   does today, `openspec/changes/` what it is about to do (the roadmap is the
   `phase-<n>-<slug>` changes), `openspec/changes/archive/` how it got here. CLAUDE.md holds the
   working agreements, guardrails, safety rules and conventions in full; read it before
@@ -60,8 +60,10 @@ context: |
      `apiVersion: siding.dev/v1alpha1` and a `kind`; within a version fields are only added;
      empty fields are omitted, never null; a failure prints `kind: Error` with a stable `code`
      and a `message`. Exit codes: 0 Ready, 1 Failed, 2 TimedOut, 3 NoCapacity.
-  6. Never lose work. Removing a stack or worktree refuses when the branch is unmerged or the
-     worktree is dirty, unless forced; every destructive command supports `--dry-run`.
+  6. Never lose work. Removing a stack's data (its volumes) or a worktree refuses when the
+     branch is unmerged or the worktree is dirty, unless forced; removing containers and
+     networks loses nothing and is not guarded (`siding down` keeps volumes, `down --volumes`
+     is guarded). Every destructive command supports `--dry-run`.
   7. Only a human exposes anything to the internet. `siding share` is interactive only and has
      no `--yes`.
   8. Standard building blocks (Docker Compose, Traefik, later Sablier) over custom code.
@@ -80,8 +82,11 @@ context: |
     every stack by Host and path; no stack publishes a port.
   - Labels on every container, network and volume siding creates or adopts: `dev.siding.repo`,
     `dev.siding.branch`, `dev.siding.worktree` (absolute path), `dev.siding.machine` (stable
-    machine id), `dev.siding.agent` (optional). Service labels: `dev.siding.route`,
-    `dev.siding.seed` (`volume|script|none`). Volume label `dev.siding.shared`. The machine and
+    machine id); on containers also `dev.siding.agent` (optional; network and volume labels
+    must not change between two `up`s, since Compose recreates a network whose labels changed).
+    Service labels: `dev.siding.route` (`/`, `/<path>`, `false`), `dev.siding.port` (the HTTP
+    port of a service with several), `dev.siding.seed` (`volume|script|none`). Volume label
+    `dev.siding.shared`. The machine and
     worktree labels exist from v0.1 so that remote hosts need no migration later.
   - Development and every test run in a devcontainer with its own Docker daemon
     (Docker-in-Docker); see the spec `dev-environment`.

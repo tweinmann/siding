@@ -25,8 +25,9 @@ test:
     openspec validate --all --strict --no-interactive
 
 # Rewrite golden files from the current code after an intended change
+# (every package with golden files; a package without the -update flag would fail on it)
 golden:
-    go test ./internal/cli -update
+    go test ./internal/cli ./internal/stack -update
 
 # Build a static siding binary for this container (linux) into bin/
 build:
@@ -35,3 +36,7 @@ build:
 # Inner daemon: a compose project with a healthcheck, ports reset by an override, Traefik routing
 smoke-docker:
     hack/smoke/docker.sh
+
+# Inner daemon: siding's own commands end to end (setup, up --wait, routing, verdicts, ps, down)
+smoke-stacks:
+    hack/smoke/stacks.sh

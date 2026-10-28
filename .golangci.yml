@@ -1,5 +1,9 @@
 version: "2"
 
+# Also lint the end-to-end tests, which only build with the tag docker (just smoke-stacks).
+run:
+  build-tags: [docker]
+
 linters:
   default: standard
   enable:

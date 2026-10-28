@@ -1,0 +1,30 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Stack",
+  "stack": {
+    "project": "shop-main",
+    "repo": "shop",
+    "branch": "main",
+    "worktree": "/src/shop",
+    "url": "http://shop.main.localhost/"
+  },
+  "services": [
+    {
+      "name": "api",
+      "url": "http://api.shop.main.localhost/",
+      "route": "/api",
+      "port": 8080
+    },
+    {
+      "name": "mail",
+      "url": "http://mail.shop.main.localhost/",
+      "port": 8025
+    },
+    {
+      "name": "web",
+      "url": "http://web.shop.main.localhost/",
+      "route": "/",
+      "port": 3000
+    }
+  ]
+}
