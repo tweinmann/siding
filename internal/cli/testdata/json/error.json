@@ -1,0 +1,6 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Error",
+  "code": "InvalidArguments",
+  "message": "siding version takes no arguments, got \"extra\""
+}

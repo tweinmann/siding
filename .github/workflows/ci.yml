@@ -1,0 +1,52 @@
+# Level-1 checks and the Docker smoke test. Both run inside the devcontainer image, so CI uses
+# exactly the tool versions pinned in .devcontainer/Dockerfile, and the smoke test runs against
+# the devcontainer's own Docker daemon, as locally.
+#
+# `just test` runs on every push. The smoke test runs on pull requests and on main.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push cancels the run it replaces; runs on main are never cancelled.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    if: github.event_name == 'push'
+    # The same architecture as the maintainer's Mac.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # Go's build and module cache, kept in the workspace so the devcontainer sees it.
+      - uses: actions/cache@v4
+        with:
+          path: .cache/go
+          key: go-${{ runner.arch }}-${{ hashFiles('go.sum', '.devcontainer/Dockerfile') }}-${{ github.sha }}
+          restore-keys: go-${{ runner.arch }}-${{ hashFiles('go.sum', '.devcontainer/Dockerfile') }}-
+      - name: just test (in the devcontainer)
+        uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: |
+            export GOCACHE="$PWD/.cache/go/build" GOMODCACHE="$PWD/.cache/go/mod"
+            just test
+
+  smoke-docker:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: just smoke-docker (in the devcontainer)
+        uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: just smoke-docker

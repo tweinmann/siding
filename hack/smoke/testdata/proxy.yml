@@ -1,0 +1,25 @@
+# The shared proxy of the smoke test: Traefik with the Docker provider on the network "siding".
+# The socket is the inner daemon's, inside the devcontainer.
+services:
+  traefik:
+    image: ${SIDING_TRAEFIK_IMAGE}
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=siding
+      - --ping=true
+    ports:
+      - "${SMOKE_PROXY_PORT}:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [siding]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+networks:
+  siding:
+    external: true

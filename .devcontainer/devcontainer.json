@@ -1,0 +1,60 @@
+{
+  "name": "siding",
+  "build": { "dockerfile": "Dockerfile" },
+
+  // Fixed name so hack/nuke.sh can remove it by exact name.
+  "runArgs": ["--name", "siding-devcontainer"],
+
+  // Docker-in-Docker: a private Docker daemon runs inside this container (the feature makes the
+  // container privileged). Every stack, proxy and image siding's tests create lives in that
+  // daemon, not next to the host's other containers. "moby": false installs Docker CE; moby has
+  // no packages for Debian trixie. Compose is not taken from the feature, whose version would be
+  // unpinned; the Dockerfile installs a pinned plugin.
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "moby": false,
+      "version": "29.9.2",
+      "dockerDashComposeVersion": "none",
+      "installDockerBuildx": true
+    }
+  },
+
+  "remoteUser": "vscode",
+  // containerEnv, not remoteEnv: it also reaches docker exec and CI's devcontainers/ci.
+  "containerEnv": {
+    // Marks the siding devcontainer; hack/lib.sh requires it and hack/nuke.sh refuses it.
+    "SIDING_DEVCONTAINER": "1"
+  },
+
+  // Every volume here is listed in the footprint inventory of the dev-environment spec and
+  // removed by hack/nuke.sh. Add new ones in all three places.
+  // The last two replace the docker-in-docker feature's own mounts for the same targets, whose
+  // names contain a generated ID; fixed names keep exact-name cleanup possible.
+  "mounts": [
+    "source=siding-gomodcache,target=/go/pkg/mod,type=volume",
+    "source=siding-gocache,target=/home/vscode/.cache/go-build,type=volume",
+    "source=siding-claude-config,target=/home/vscode/.claude,type=volume",
+    "source=siding-docker,target=/var/lib/docker,type=volume",
+    "source=siding-containerd,target=/var/lib/containerd,type=volume"
+  ],
+
+  // The proxy (Traefik) listens on 8080 of the inner daemon; this forwards it to the host, so
+  // http://<host>.localhost:8080 reaches a stack from the browser.
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "siding proxy", "onAutoForward": "silent" }
+  },
+
+  // Worktrees with relative paths work both inside the container and on the host.
+  "postCreateCommand": "git config worktree.useRelativePaths true",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "redhat.vscode-yaml",
+        "anthropic.claude-code"
+      ]
+    }
+  }
+}

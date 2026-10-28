@@ -1,0 +1,115 @@
+schema: spec-driven
+
+context: |
+  Language: English
+  All artifacts must be written in English.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  ## The product
+  siding gives every git worktree its own Docker Compose stack and one view of all of them. It
+  answers the question parallel coding agents leave open: does what my agent built actually run,
+  and what does it cost me right now? One static Go binary, `siding`, on macOS and Linux.
+  Target users: developers who run several coding agents or branches in parallel and whose app
+  already runs with Docker Compose.
+
+  - Every worktree runs the user's existing compose file as its own Compose project, with its
+    own containers, volumes and network.
+  - Every stack gets its own address, e.g. `shop.feature-login.localhost`, through one local
+    proxy: no published ports, no port variables, separate origins and cookies per branch.
+  - Agents wait for a verdict: Ready, or Failed with service, reason, hint and the last log
+    lines, as versioned JSON.
+  - Humans see what runs, what it costs and what can go after a merge.
+  - A memory budget keeps the machine usable; later, stacks can run on a remote Docker host.
+
+  Status: pre-alpha. Phase 0 (repository, devcontainer, OpenSpec, CI) is done; `siding version`
+  is the only command. OpenSpec is the only planning source: `openspec/specs/` is what siding
+  does today, `openspec/changes/` what it is about to do (the roadmap is the
+  `phase-<n>-<slug>` changes), `openspec/changes/archive/` how it got here. CLAUDE.md holds the
+  working agreements, guardrails, safety rules and conventions in full; read it before
+  proposing, it wins over this summary.
+
+  ## Landscape (know where siding differs; do not copy)
+  - BranchBox: feature workspaces with devcontainers, Compose identity, `.env` modules, tunnels
+    and strong agent isolation (microVM/Firecracker); says itself that a successful setup does
+    not prove the app runs. siding's core is runtime truth.
+  - berth (zoltanersek, Mrjwj34), rft-cli, worktree-compose: isolation and port allocation via
+    env vars, lists, some dashboards and snapshots. siding needs no change to the compose file,
+    routes by hostname, has a budget and a verdict with logs.
+  - sidecar, Conductor, webmux: agent sessions and terminals. siding does not manage agents; it
+    is easy to integrate with them through stable JSON.
+  - OrbStack, microplane: hostnames for local services, not aware of branches, worktrees or
+    agents.
+
+  ## Principles (guardrails)
+  1. Docker is the database. Everything siding knows comes from Compose labels and the Docker
+     API. No database and no background service in v0.1. The only allowed state is a losable
+     cache under `~/.siding`.
+  2. The user's compose file is never edited. siding writes one override file,
+     `.siding/override.yml`, and runs
+     `docker compose -p <repo>-<branch-slug> -f <compose file> -f .siding/override.yml …`.
+  3. No published ports. The override resets them (`ports: !reset []`, Compose >= 2.24). HTTP
+     services are reached through one shared Traefik (`siding-proxy`, Docker provider, network
+     `siding`): the stack's host is `<repo>.<branch-slug>.localhost`; `dev.siding.route: "/api"`
+     mounts a service under that path on the stack host; `dev.siding.route: "/"` makes it the
+     root; an HTTP service without the label answers at `<service>.<repo>.<branch-slug>.localhost`;
+     `dev.siding.route: "false"` hides it.
+  4. Runtime truth. A stack is Ready only when every service with a healthcheck is healthy and
+     every routed service answers through the proxy. A failure names the service, the reason, a
+     hint and the last log lines of that service.
+  5. Agent and human see the same thing. Every reading command has `--json`: one document with
+     `apiVersion: siding.dev/v1alpha1` and a `kind`; within a version fields are only added;
+     empty fields are omitted, never null; a failure prints `kind: Error` with a stable `code`
+     and a `message`. Exit codes: 0 Ready, 1 Failed, 2 TimedOut, 3 NoCapacity.
+  6. Never lose work. Removing a stack or worktree refuses when the branch is unmerged or the
+     worktree is dirty, unless forced; every destructive command supports `--dry-run`.
+  7. Only a human exposes anything to the internet. `siding share` is interactive only and has
+     no `--yes`.
+  8. Standard building blocks (Docker Compose, Traefik, later Sablier) over custom code.
+  9. Removable. Uninstalling siding leaves plain Compose projects that keep running.
+
+  ## Non-goals
+  Not an agent manager, not a sandbox for the agent itself, not Kubernetes, not production, not
+  a hot-reload tool (Compose `develop.watch` is passed through).
+
+  ## Architecture in short
+  - One Go binary, standard layout: `cmd/siding`, `internal/…`. Flags, arguments and output in
+    `internal/cli`; the `--json` documents are types of their own in `internal/cli/json.go`.
+  - State is read from the Docker Engine API (Go SDK) and from Compose labels; lifecycle
+    operations (`up`, `down`) invoke `docker compose` with the user's file plus the override.
+  - One shared Traefik (`siding-proxy`) with the Docker provider on the network `siding` routes
+    every stack by Host and path; no stack publishes a port.
+  - Labels on every container, network and volume siding creates or adopts: `dev.siding.repo`,
+    `dev.siding.branch`, `dev.siding.worktree` (absolute path), `dev.siding.machine` (stable
+    machine id), `dev.siding.agent` (optional). Service labels: `dev.siding.route`,
+    `dev.siding.seed` (`volume|script|none`). Volume label `dev.siding.shared`. The machine and
+    worktree labels exist from v0.1 so that remote hosts need no migration later.
+  - Development and every test run in a devcontainer with its own Docker daemon
+    (Docker-in-Docker); see the spec `dev-environment`.
+
+  ## Roadmap (draft changes phase-1 to phase-5)
+  - v0.1 (phase-1): `setup`, `up`, `ps`, `status --wait --json` with log tail, `logs`, `open`,
+    `down`, hostname and path routing, Claude Code skill.
+  - v0.2 (phase-2): web overview at `siding.localhost`, `gc` (git-aware), `lint`, memory budget
+    (refuse, exit 3), Docker-outside-of-Docker devcontainer.
+  - v0.3 (phase-3): snapshots and `--seed`, queue for capacity, parallel build limit, learned
+    peaks.
+  - v0.4 (phase-4): idle stop and wake on request, stopping idle stacks under pressure.
+  - v0.5 (phase-5): remote Docker host (Docker context), local forwarder for `*.localhost`,
+    `HOST` column in `ps`.
+  - Later: HTTP errors from the proxy in the verdict, a shared server with a database per
+    branch, integrations with agent managers, scoped Docker access for agents.
+
+  ## Rules for proposals
+  - A phase is one change, `phase-<n>-<slug>`. Proposing a draft phase replaces its roadmap
+    text with a real proposal, writes its delta specs, design.md and tasks.md, and removes
+    `skip_specs: true` from its `.openspec.yaml`. Only a change that changes no behaviour (pure
+    verification, tooling, docs) keeps `skip_specs`.
+  - Decisions go into the change's design.md, with the alternatives and why they lost. A
+    decision that changes a convention, guardrail or safety rule also changes CLAUDE.md, or this
+    context, in the same change.
+  - Ask the maintainer about open design decisions instead of assuming.
+  - A spec describes what siding does today, never a future phase.
+  - Tests create stacks only as Compose projects named `siding-test-*` and remove them by name.
+  - No real secrets in the repo, golden files or logs; `.env` values never appear in `--json`.
+  - Level-1 checks are `just test`; golden files are rewritten with `just golden`. Tasks that
+    need Docker say so and name the `just smoke-*` recipe that checks them.

@@ -1,0 +1,30 @@
+# What siding will write to .siding/override.yml, by hand for the repository "demo" on the branch
+# "main": no published ports, the shared network "siding", and Traefik routes by host and path.
+services:
+  web:
+    ports: !reset []
+    networks: [default, siding]
+    labels:
+      dev.siding.repo: demo
+      dev.siding.branch: main
+      dev.siding.route: "/"
+      traefik.enable: "true"
+      traefik.docker.network: siding
+      traefik.http.routers.siding-test-demo-web.rule: Host(`demo.main.localhost`)
+      traefik.http.routers.siding-test-demo-web.entrypoints: web
+      traefik.http.services.siding-test-demo-web.loadbalancer.server.port: "80"
+  api:
+    networks: [default, siding]
+    labels:
+      dev.siding.repo: demo
+      dev.siding.branch: main
+      dev.siding.route: "/api"
+      traefik.enable: "true"
+      traefik.docker.network: siding
+      traefik.http.routers.siding-test-demo-api.rule: Host(`demo.main.localhost`) && PathPrefix(`/api`)
+      traefik.http.routers.siding-test-demo-api.entrypoints: web
+      traefik.http.services.siding-test-demo-api.loadbalancer.server.port: "80"
+
+networks:
+  siding:
+    external: true

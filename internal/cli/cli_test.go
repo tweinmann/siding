@@ -1,0 +1,100 @@
+package cli
+
+import (
+	"bytes"
+	"path/filepath"
+	"testing"
+
+	"github.com/tweinmann/siding/internal/testutil"
+)
+
+var testBuild = BuildInfo{
+	Version:   "v0.0.0-test",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	GoVersion: "go1.27.3",
+	Platform:  "linux/arm64",
+}
+
+func run(args ...string) (code int, stdout, stderr string) {
+	var out, errOut bytes.Buffer
+	code = Execute(New(Options{Build: testBuild}), args, &out, &errOut)
+	return code, out.String(), errOut.String()
+}
+
+// Every kind of document has one golden file in testdata/json.
+func TestJSONDocuments(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		golden string
+		args   []string
+		code   int
+	}{
+		{golden: "version.json", args: []string{"version", "--json"}, code: exitOK},
+		{golden: "error.json", args: []string{"version", "--json", "extra"}, code: exitFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.golden, func(t *testing.T) {
+			t.Parallel()
+			code, stdout, stderr := run(tt.args...)
+			if code != tt.code {
+				t.Errorf("exit code %d, want %d", code, tt.code)
+			}
+			if stderr != "" {
+				t.Errorf("stderr is not empty: %q", stderr)
+			}
+			testutil.Golden(t, filepath.Join("testdata", "json", tt.golden), []byte(stdout))
+		})
+	}
+}
+
+func TestText(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		args   []string
+		code   int
+		stdout string
+		stderr string
+	}{
+		{
+			name:   "version",
+			args:   []string{"version"},
+			code:   exitOK,
+			stdout: "siding v0.0.0-test (0123456789ab) go1.27.3 linux/arm64\n",
+		},
+		{
+			name:   "unknown flag",
+			args:   []string{"version", "--nope"},
+			code:   exitFailed,
+			stderr: "error: unknown flag: --nope\n",
+		},
+		{
+			name:   "unknown command",
+			args:   []string{"nope"},
+			code:   exitFailed,
+			stderr: "error: unknown command \"nope\" for \"siding\"\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			code, stdout, stderr := run(tt.args...)
+			if code != tt.code || stdout != tt.stdout || stderr != tt.stderr {
+				t.Errorf("got (%d, %q, %q), want (%d, %q, %q)", code, stdout, stderr, tt.code, tt.stdout, tt.stderr)
+			}
+		})
+	}
+}
+
+// A flag error happens before --json is parsed; the document must still be JSON.
+func TestErrorDocumentOnFlagError(t *testing.T) {
+	t.Parallel()
+	code, stdout, stderr := run("version", "--json", "--nope")
+	if code != exitFailed || stderr != "" {
+		t.Fatalf("got (%d, stderr %q), want (%d, no stderr)", code, stderr, exitFailed)
+	}
+	want := "{\n  \"apiVersion\": \"siding.dev/v1alpha1\",\n  \"kind\": \"Error\",\n  \"code\": \"InvalidArguments\",\n  \"message\": \"unknown flag: --nope\"\n}\n"
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+}

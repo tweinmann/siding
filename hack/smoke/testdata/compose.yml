@@ -1,0 +1,21 @@
+# A user's compose file as siding finds it: a published port, healthchecks, no siding labels.
+# busybox httpd answers with the service's name, at / and at /api.
+services:
+  web:
+    image: ${SIDING_BUSYBOX_IMAGE}
+    command: ["sh", "-c", "mkdir -p /www && echo web > /www/index.html && echo web > /www/api && exec httpd -f -p 80 -h /www"]
+    ports:
+      - "18081:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  api:
+    image: ${SIDING_BUSYBOX_IMAGE}
+    command: ["sh", "-c", "mkdir -p /www && echo api > /www/index.html && echo api > /www/api && exec httpd -f -p 80 -h /www"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 1s
+      timeout: 2s
+      retries: 30

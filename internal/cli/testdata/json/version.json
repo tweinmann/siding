@@ -1,0 +1,8 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Version",
+  "version": "v0.0.0-test",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "goVersion": "go1.27.3",
+  "platform": "linux/arm64"
+}
