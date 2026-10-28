@@ -1,0 +1,156 @@
+{
+  "name": "shop-main",
+  "networks": {
+    "backend": {
+      "name": "shop-main_backend",
+      "ipam": {}
+    },
+    "default": {
+      "name": "shop-main_default",
+      "ipam": {}
+    }
+  },
+  "services": {
+    "admin": {
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "labels": {
+        "dev.siding.route": "false"
+      },
+      "networks": {
+        "default": null
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 80,
+          "published": "9000",
+          "protocol": "tcp"
+        }
+      ]
+    },
+    "api": {
+      "command": null,
+      "entrypoint": null,
+      "environment": {
+        "API_TOKEN": "not-a-real-api-token"
+      },
+      "image": "busybox:1.37.0",
+      "labels": {
+        "dev.siding.port": "8080",
+        "dev.siding.route": "/api"
+      },
+      "networks": {
+        "backend": null,
+        "default": null
+      },
+      "expose": [
+        "8080",
+        "9229"
+      ]
+    },
+    "db": {
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "networks": {
+        "backend": {
+          "aliases": [
+            "database"
+          ]
+        }
+      },
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "data",
+          "target": "/var/lib/data",
+          "volume": {}
+        },
+        {
+          "type": "volume",
+          "source": "shared",
+          "target": "/shared",
+          "volume": {}
+        }
+      ],
+      "ports": [
+        {
+          "mode": "ingress",
+          "target": 5432,
+          "published": "5432",
+          "protocol": "tcp"
+        }
+      ]
+    },
+    "mail": {
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "networks": {
+        "default": null
+      },
+      "expose": [
+        "8025/tcp",
+        "1025/udp"
+      ]
+    },
+    "tools": {
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "network_mode": "host",
+      "expose": [
+        "7000-7001"
+      ]
+    },
+    "web": {
+      "command": null,
+      "entrypoint": null,
+      "environment": {
+        "DB_URL": "postgres://app:not-a-real-token@db/app",
+        "NODE_ENV": "development"
+      },
+      "image": "busybox:1.37.0",
+      "labels": {
+        "dev.siding.route": "/"
+      },
+      "networks": {
+        "default": null
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "true"
+        ]
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "target": 3000,
+          "published": "3000",
+          "protocol": "tcp"
+        }
+      ]
+    },
+    "worker": {
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "networks": {
+        "default": null
+      }
+    }
+  },
+  "volumes": {
+    "data": {
+      "name": "shop-main_data"
+    },
+    "shared": {
+      "name": "shared-cache",
+      "external": true
+    }
+  }
+}

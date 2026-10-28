@@ -18,8 +18,16 @@ import (
 const documentAPIVersion = "siding.dev/v1alpha1"
 
 const (
-	kindError   = "Error"
-	kindVersion = "Version"
+	kindAddress   = "Address"
+	kindDown      = "Down"
+	kindError     = "Error"
+	kindLogs      = "Logs"
+	kindSetup     = "Setup"
+	kindSkill     = "Skill"
+	kindStack     = "Stack"
+	kindStackList = "StackList"
+	kindStatus    = "Status"
+	kindVersion   = "Version"
 )
 
 // jsonFlag is the name of the flag, looked up again by Execute to report an error as a document.
@@ -58,6 +66,7 @@ func wantsJSON(cmd *cobra.Command, args []string) bool {
 func printJSON(w io.Writer, doc any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
 	return enc.Encode(doc)
 }
 
@@ -66,6 +75,7 @@ type errorDocument struct {
 	header
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
 }
 
 type versionDocument struct {
@@ -74,4 +84,128 @@ type versionDocument struct {
 	Commit    string `json:"commit,omitempty"`
 	GoVersion string `json:"goVersion"`
 	Platform  string `json:"platform"`
+}
+
+// stackRef names a stack in other documents.
+type stackRef struct {
+	Project  string `json:"project"`
+	Repo     string `json:"repo"`
+	Branch   string `json:"branch"`
+	Worktree string `json:"worktree"`
+	// URL is the stack's address: its host on the proxy's port.
+	URL string `json:"url,omitempty"`
+}
+
+// setupDocument is what setup prints.
+type setupDocument struct {
+	header
+	Container string `json:"container"`
+	Network   string `json:"network"`
+	Image     string `json:"image"`
+	Port      int    `json:"port"`
+	URL       string `json:"url"`
+	// State is created, updated or unchanged.
+	State string `json:"state"`
+}
+
+// stackDocument is what up prints without --wait.
+type stackDocument struct {
+	header
+	Stack    stackRef         `json:"stack"`
+	Services []serviceAddress `json:"services,omitempty"`
+}
+
+type serviceAddress struct {
+	Name string `json:"name"`
+	// URL is the service host.
+	URL string `json:"url"`
+	// Route is the path on the stack's host, if any.
+	Route string `json:"route,omitempty"`
+	Port  int    `json:"port"`
+}
+
+// statusDocument is the verdict of status and up --wait.
+type statusDocument struct {
+	header
+	// Verdict is Ready, Starting, Failed or TimedOut.
+	Verdict  string           `json:"verdict"`
+	Stack    stackRef         `json:"stack"`
+	Services []serviceStatus  `json:"services,omitempty"`
+	Failure  *failureDocument `json:"failure,omitempty"`
+}
+
+type serviceStatus struct {
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Health string `json:"health,omitempty"`
+	Route  string `json:"route,omitempty"`
+	URL    string `json:"url,omitempty"`
+	// Answering is set for services with a route path.
+	Answering *bool `json:"answering,omitempty"`
+	Ready     bool  `json:"ready"`
+}
+
+type failureDocument struct {
+	Service string `json:"service"`
+	// Reason is Exited, Unhealthy, Restarting, Missing, NotAnswering or NotReady.
+	Reason string   `json:"reason"`
+	Hint   string   `json:"hint"`
+	Logs   []string `json:"logs,omitempty"`
+}
+
+// stackListDocument is what ps prints.
+type stackListDocument struct {
+	header
+	Stacks      []stackEntry `json:"stacks,omitempty"`
+	MemoryBytes uint64       `json:"memoryBytes,omitempty"`
+}
+
+type stackEntry struct {
+	Project  string `json:"project"`
+	Repo     string `json:"repo"`
+	Branch   string `json:"branch"`
+	Worktree string `json:"worktree"`
+	Machine  string `json:"machine,omitempty"`
+	Agent    string `json:"agent,omitempty"`
+	// State is running, partial or stopped.
+	State           string `json:"state"`
+	URL             string `json:"url"`
+	MemoryBytes     uint64 `json:"memoryBytes,omitempty"`
+	WorktreeMissing bool   `json:"worktreeMissing,omitempty"`
+}
+
+// logsDocument is what logs --json prints.
+type logsDocument struct {
+	header
+	Stack    stackRef      `json:"stack"`
+	Services []serviceLogs `json:"services,omitempty"`
+}
+
+type serviceLogs struct {
+	Name  string   `json:"name"`
+	Lines []string `json:"lines,omitempty"`
+}
+
+// addressDocument is what open --json prints.
+type addressDocument struct {
+	header
+	URL     string `json:"url"`
+	Service string `json:"service,omitempty"`
+}
+
+// downDocument is what down prints.
+type downDocument struct {
+	header
+	Stack      stackRef `json:"stack"`
+	DryRun     bool     `json:"dryRun,omitempty"`
+	Containers []string `json:"containers,omitempty"`
+	Networks   []string `json:"networks,omitempty"`
+	Volumes    []string `json:"volumes,omitempty"`
+}
+
+// skillDocument is what skill --json prints.
+type skillDocument struct {
+	header
+	Name string `json:"name"`
+	Text string `json:"text"`
 }

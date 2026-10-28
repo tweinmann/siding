@@ -1,8 +1,8 @@
-# Level-1 checks and the Docker smoke test. Both run inside the devcontainer image, so CI uses
-# exactly the tool versions pinned in .devcontainer/Dockerfile, and the smoke test runs against
+# Level-1 checks and the Docker smoke tests. All run inside the devcontainer image, so CI uses
+# exactly the tool versions pinned in .devcontainer/Dockerfile, and the smoke tests run against
 # the devcontainer's own Docker daemon, as locally.
 #
-# `just test` runs on every push. The smoke test runs on pull requests and on main.
+# `just test` runs on every push. The smoke tests run on pull requests and on main.
 name: ci
 
 on:
@@ -39,14 +39,16 @@ jobs:
             export GOCACHE="$PWD/.cache/go/build" GOMODCACHE="$PWD/.cache/go/mod"
             just test
 
-  smoke-docker:
+  smoke:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: just smoke-docker (in the devcontainer)
+      - name: just smoke-docker and smoke-stacks (in the devcontainer)
         uses: devcontainers/ci@v0.3
         with:
           push: never
-          runCmd: just smoke-docker
+          runCmd: |
+            just smoke-docker
+            just smoke-stacks

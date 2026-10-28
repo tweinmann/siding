@@ -1,0 +1,29 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "StackList",
+  "stacks": [
+    {
+      "project": "shop-feature-login",
+      "repo": "shop",
+      "branch": "feature/login",
+      "worktree": "/src/shop-login",
+      "machine": "5c833a2dc2c206c2",
+      "agent": "claude",
+      "state": "partial",
+      "url": "http://shop.feature-login.localhost:8080/",
+      "memoryBytes": 524288000,
+      "worktreeMissing": true
+    },
+    {
+      "project": "shop-main",
+      "repo": "shop",
+      "branch": "main",
+      "worktree": "/src/shop",
+      "machine": "5c833a2dc2c206c2",
+      "state": "running",
+      "url": "http://shop.main.localhost:8080/",
+      "memoryBytes": 314572800
+    }
+  ],
+  "memoryBytes": 838860800
+}

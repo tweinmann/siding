@@ -1,0 +1,22 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Down",
+  "stack": {
+    "project": "shop-main",
+    "repo": "shop",
+    "branch": "main",
+    "worktree": "/src/shop",
+    "url": "http://shop.main.localhost/"
+  },
+  "dryRun": true,
+  "containers": [
+    "shop-main-db-1",
+    "shop-main-web-1"
+  ],
+  "networks": [
+    "shop-main_default"
+  ],
+  "volumes": [
+    "shop-main_data"
+  ]
+}
