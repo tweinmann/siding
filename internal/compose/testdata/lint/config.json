@@ -1,0 +1,119 @@
+{
+  "name": "shop-main",
+  "networks": {
+    "default": {
+      "name": "shop-main_default",
+      "ipam": {}
+    },
+    "shared": {
+      "name": "everyone",
+      "ipam": {}
+    }
+  },
+  "services": {
+    "db": {
+      "container_name": "shop-db",
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "mem_limit": "1073741824",
+      "networks": {
+        "default": null
+      },
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/var/lib/shop",
+          "target": "/data",
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "/src/shop/init",
+          "target": "/docker-entrypoint-initdb.d",
+          "bind": {}
+        },
+        {
+          "type": "volume",
+          "source": "pgdata",
+          "target": "/pgdata",
+          "volume": {}
+        },
+        {
+          "type": "volume",
+          "source": "cache",
+          "target": "/cache",
+          "volume": {}
+        }
+      ],
+      "healthcheck": {
+        "test": [
+          "NONE"
+        ]
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "target": 5432,
+          "published": "5432",
+          "protocol": "tcp"
+        }
+      ]
+    },
+    "tools": {
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "network_mode": "host"
+    },
+    "web": {
+      "deploy": {
+        "replicas": 2,
+        "resources": {
+          "limits": {
+            "memory": "536870912"
+          }
+        },
+        "placement": {}
+      },
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "labels": {
+        "dev.siding.route": "/app"
+      },
+      "networks": {
+        "default": null
+      },
+      "expose": [
+        "3000"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "true"
+        ]
+      }
+    },
+    "worker": {
+      "scale": 3,
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "networks": {
+        "shared": null
+      }
+    }
+  },
+  "volumes": {
+    "cache": {
+      "name": "pip-cache",
+      "labels": {
+        "dev.siding.shared": "true"
+      }
+    },
+    "pgdata": {
+      "name": "shop-pgdata"
+    }
+  }
+}

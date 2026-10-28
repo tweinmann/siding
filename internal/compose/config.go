@@ -62,17 +62,31 @@ func (p *Project) ServiceNames() []string {
 // Service is one service of a Project.
 type Service struct {
 	// Ports are the distinct container ports from ports (targets) and expose, ascending.
-	Ports       []int
+	Ports []int
+	// Published are the ports the compose file publishes on the host.
+	Published   []int
 	Labels      map[string]string
 	Networks    []string // keys of the service's networks, sorted
 	NetworkMode string
 	Environment map[string]string
+
+	ContainerName string
+	// Binds are the absolute host paths of the service's bind mounts.
+	Binds []string
+	// Healthcheck is set when the compose file gives the service a healthcheck. One from the
+	// image is not visible here.
+	Healthcheck bool
+	// MemoryLimit is deploy.resources.limits.memory, else mem_limit, in bytes; 0 for none.
+	MemoryLimit int64
+	// Replicas is deploy.replicas, else scale, else 1.
+	Replicas int
 }
 
 // Resource is a top-level network or volume.
 type Resource struct {
 	Name     string
 	External bool
+	Labels   map[string]string
 }
 
 type rawProject struct {
@@ -84,9 +98,29 @@ type rawProject struct {
 
 type rawService struct {
 	Ports []struct {
-		Target   int    `json:"target"`
-		Protocol string `json:"protocol"`
+		Target    int    `json:"target"`
+		Published string `json:"published"`
+		Protocol  string `json:"protocol"`
 	} `json:"ports"`
+	ContainerName string `json:"container_name"`
+	Volumes       []struct {
+		Type   string `json:"type"`
+		Source string `json:"source"`
+	} `json:"volumes"`
+	Healthcheck *struct {
+		Test    []string `json:"test"`
+		Disable bool     `json:"disable"`
+	} `json:"healthcheck"`
+	MemLimit string `json:"mem_limit"`
+	Scale    *int   `json:"scale"`
+	Deploy   *struct {
+		Replicas  *int `json:"replicas"`
+		Resources struct {
+			Limits struct {
+				Memory string `json:"memory"`
+			} `json:"limits"`
+		} `json:"resources"`
+	} `json:"deploy"`
 	Expose      []json.RawMessage           `json:"expose"`
 	Labels      map[string]string           `json:"labels"`
 	Networks    map[string]json.RawMessage  `json:"networks"`
@@ -95,8 +129,9 @@ type rawService struct {
 }
 
 type rawResource struct {
-	Name     string `json:"name"`
-	External bool   `json:"external"`
+	Name     string            `json:"name"`
+	External bool              `json:"external"`
+	Labels   map[string]string `json:"labels"`
 }
 
 // ParseConfig reads the output of docker compose config --format json.
@@ -107,7 +142,8 @@ func ParseConfig(data []byte) (*Project, error) {
 	}
 	p := &Project{Name: raw.Name, Services: map[string]Service{}, Networks: map[string]Resource{}, Volumes: map[string]Resource{}}
 	for name, rs := range raw.Services {
-		s := Service{Labels: rs.Labels, NetworkMode: rs.NetworkMode, Environment: map[string]string{}}
+		s := Service{Labels: rs.Labels, NetworkMode: rs.NetworkMode, Environment: map[string]string{},
+			ContainerName: rs.ContainerName, Replicas: 1}
 		if s.Labels == nil {
 			s.Labels = map[string]string{}
 		}
@@ -116,6 +152,34 @@ func ParseConfig(data []byte) (*Project, error) {
 			if port.Protocol == "" || port.Protocol == "tcp" {
 				ports[port.Target] = true
 			}
+			if n, err := strconv.Atoi(port.Published); err == nil {
+				s.Published = append(s.Published, n)
+			}
+		}
+		for _, v := range rs.Volumes {
+			if v.Type == "bind" {
+				s.Binds = append(s.Binds, v.Source)
+			}
+		}
+		if h := rs.Healthcheck; h != nil && !h.Disable && len(h.Test) > 0 && h.Test[0] != "NONE" {
+			s.Healthcheck = true
+		}
+		limit := rs.MemLimit
+		if rs.Deploy != nil && rs.Deploy.Resources.Limits.Memory != "" {
+			limit = rs.Deploy.Resources.Limits.Memory
+		}
+		if limit != "" {
+			n, err := strconv.ParseInt(limit, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("service %s: memory limit %q", name, limit)
+			}
+			s.MemoryLimit = n
+		}
+		switch {
+		case rs.Deploy != nil && rs.Deploy.Replicas != nil:
+			s.Replicas = *rs.Deploy.Replicas
+		case rs.Scale != nil:
+			s.Replicas = *rs.Scale
 		}
 		for _, e := range rs.Expose {
 			expanded, err := parseExpose(e)
@@ -146,12 +210,20 @@ func ParseConfig(data []byte) (*Project, error) {
 		p.Services[name] = s
 	}
 	for k, r := range raw.Networks {
-		p.Networks[k] = Resource(r)
+		p.Networks[k] = resource(r)
 	}
 	for k, r := range raw.Volumes {
-		p.Volumes[k] = Resource(r)
+		p.Volumes[k] = resource(r)
 	}
 	return p, nil
+}
+
+func resource(r rawResource) Resource {
+	labels := r.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	return Resource{Name: r.Name, External: r.External, Labels: labels}
 }
 
 // parseExpose expands one expose entry ("3000", "3000/tcp", "9000-9001", or a number) into

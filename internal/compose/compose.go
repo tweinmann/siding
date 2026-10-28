@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -128,11 +129,43 @@ func composeError(what, output string, err error) error {
 	if !errors.As(err, &exit) {
 		return fail.New(fail.ComposeFailed, "%s: %v", what, err)
 	}
-	output = strings.TrimSpace(output)
+	output = errorLines(output)
 	if output == "" {
 		return fail.New(fail.ComposeFailed, "%s failed with exit code %d", what, exit.ExitCode())
 	}
 	return fail.New(fail.ComposeFailed, "%s failed: %s", what, output)
+}
+
+// progress matches Compose's progress lines, such as "Container shop-db-1 Creating".
+var progress = regexp.MustCompile(`^(Container|Network|Volume|Image)\s+\S+\s+\S+\s*$`)
+
+// errorLines keeps what explains a failure in Compose's stderr: no progress lines, the lines
+// that say "error" when there are any, each message once.
+func errorLines(output string) string {
+	var lines, errs []string
+	seen := map[string]bool{}
+	for _, l := range strings.Split(output, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || progress.MatchString(l) {
+			continue
+		}
+		// Compose repeats a service's error with a "service:<name>:<n> " prefix.
+		if _, rest, ok := strings.Cut(l, " "); ok && strings.HasPrefix(l, "service:") {
+			l = rest
+		}
+		if seen[l] {
+			continue
+		}
+		seen[l] = true
+		lines = append(lines, l)
+		if strings.Contains(strings.ToLower(l), "error") {
+			errs = append(errs, l)
+		}
+	}
+	if len(errs) > 0 {
+		lines = errs
+	}
+	return strings.Join(lines, "\n")
 }
 
 // tailBuffer keeps the last max lines written to it.

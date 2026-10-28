@@ -38,11 +38,15 @@ type Client struct {
 }
 
 func (c Client) run(ctx context.Context, dir string, args ...string) (string, error) {
+	return c.exec(ctx, append([]string{"-C", dir}, args...))
+}
+
+func (c Client) exec(ctx context.Context, args []string) (string, error) {
 	bin := c.Binary
 	if bin == "" {
 		bin = "git"
 	}
-	cmd := exec.CommandContext(ctx, bin, append([]string{"-C", dir}, args...)...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
@@ -110,16 +114,34 @@ func (c Client) Dirty(ctx context.Context, top string) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
+// Repo names a repository for commands that need no worktree: the worktree's directory, or,
+// when the worktree is gone, the common git directory.
+type Repo struct {
+	Dir    string
+	GitDir string
+}
+
+func (r Repo) args(rest ...string) []string {
+	if r.GitDir != "" {
+		return append([]string{"--git-dir=" + r.GitDir}, rest...)
+	}
+	return append([]string{"-C", r.Dir}, rest...)
+}
+
+func (c Client) git(ctx context.Context, r Repo, args ...string) (string, error) {
+	return c.exec(ctx, r.args(args...))
+}
+
 // DefaultBranch returns the ref the repository merges into: what origin/HEAD points to, else
 // a local main, else a local master. It returns "" when there is none.
-func (c Client) DefaultBranch(ctx context.Context, top string) (string, error) {
-	if out, err := c.run(ctx, top, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"); err == nil {
+func (c Client) DefaultBranch(ctx context.Context, r Repo) (string, error) {
+	if out, err := c.git(ctx, r, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"); err == nil {
 		return strings.TrimSpace(out), nil
 	} else if exitCode(err) < 0 {
 		return "", err
 	}
 	for _, ref := range []string{"refs/heads/main", "refs/heads/master"} {
-		if _, err := c.run(ctx, top, "rev-parse", "--verify", "--quiet", ref); err == nil {
+		if _, err := c.git(ctx, r, "rev-parse", "--verify", "--quiet", ref); err == nil {
 			return ref, nil
 		} else if exitCode(err) < 0 {
 			return "", err
@@ -128,20 +150,76 @@ func (c Client) DefaultBranch(ctx context.Context, top string) (string, error) {
 	return "", nil
 }
 
-// Merged reports whether the tip of branch is contained in the default branch, and which ref
-// that is. Without a default branch it reports false.
-func (c Client) Merged(ctx context.Context, top, branch string) (merged bool, base string, err error) {
-	base, err = c.DefaultBranch(ctx, top)
-	if err != nil || base == "" {
-		return false, "", err
+// MergeState is what git knows about whether a branch's work has arrived in the default branch.
+type MergeState struct {
+	// Base is the default branch's ref, "" when there is none.
+	Base string
+	// Exists is false when the branch itself is gone.
+	Exists bool
+	// Ancestor: the branch's tip is contained in Base.
+	Ancestor bool
+	// AtBase: the branch's tip is Base's tip, so Base has not moved past it.
+	AtBase bool
+	// UpstreamGone: the branch tracked a remote branch that no longer exists, as after a merged
+	// pull request whose branch was deleted and pruned (a squash merge included).
+	UpstreamGone bool
+	// IsBase: the branch is the default branch itself.
+	IsBase bool
+}
+
+// Merged is the rule of down --volumes: the branch's commits are in the default branch, or its
+// upstream is gone.
+func (m MergeState) Merged() bool { return m.Exists && (m.Ancestor || m.UpstreamGone) }
+
+// MergedForGC is the stricter rule of gc: not the default branch, and either the default branch
+// has moved past a contained tip or the upstream is gone. A branch without commits of its own,
+// which an agent may just have created, does not count.
+func (m MergeState) MergedForGC() bool {
+	return m.Exists && !m.IsBase && ((m.Ancestor && !m.AtBase) || m.UpstreamGone)
+}
+
+// BaseName is the default branch's short name, e.g. main for refs/remotes/origin/main.
+func (m MergeState) BaseName() string {
+	name := strings.TrimPrefix(m.Base, "refs/heads/")
+	if rest, ok := strings.CutPrefix(name, "refs/remotes/"); ok {
+		_, name, _ = strings.Cut(rest, "/")
 	}
-	_, err = c.run(ctx, top, "merge-base", "--is-ancestor", "refs/heads/"+branch, base)
+	return name
+}
+
+// MergeState returns the merge state of branch.
+func (c Client) MergeState(ctx context.Context, r Repo, branch string) (MergeState, error) {
+	var m MergeState
+	ref := "refs/heads/" + branch
+	tip, err := c.git(ctx, r, "rev-parse", "--verify", "--quiet", ref)
+	switch {
+	case exitCode(err) > 0:
+		return m, nil // the branch is gone
+	case err != nil:
+		return m, err
+	}
+	m.Exists = true
+	track, err := c.git(ctx, r, "for-each-ref", "--format=%(upstream:track)", ref)
+	if err != nil {
+		return m, err
+	}
+	m.UpstreamGone = strings.TrimSpace(track) == "[gone]"
+	if m.Base, err = c.DefaultBranch(ctx, r); err != nil || m.Base == "" {
+		return m, err
+	}
+	m.IsBase = m.BaseName() == branch
+	baseTip, err := c.git(ctx, r, "rev-parse", "--verify", "--quiet", m.Base)
+	if err != nil {
+		return m, err
+	}
+	m.AtBase = strings.TrimSpace(tip) == strings.TrimSpace(baseTip)
+	_, err = c.git(ctx, r, "merge-base", "--is-ancestor", ref, m.Base)
 	switch code := exitCode(err); {
 	case err == nil:
-		return true, base, nil
+		m.Ancestor = true
 	case code == 1:
-		return false, base, nil
 	default:
-		return false, base, err
+		return m, err
 	}
+	return m, nil
 }

@@ -38,10 +38,10 @@ func TestPs(t *testing.T) {
 		testutil.Golden(t, filepath.Join("testdata", "json", "stacklist.json"), []byte(stdout))
 
 		_, text, _ := e.run("ps")
-		want := `REPO   BRANCH         STATE    URL                                        MEMORY   WORKTREE
-shop   feature/login  partial  http://shop.feature-login.localhost:8080/  500 MiB  /src/shop-login (missing)
-shop   main           running  http://shop.main.localhost:8080/           300 MiB  /src/shop
-total                                                                     800 MiB
+		want := `REPO  BRANCH         STATE    URL                                        MEMORY   WORKTREE
+shop  feature/login  partial  http://shop.feature-login.localhost:8080/  500 MiB  /src/shop-login (missing)
+shop  main           running  http://shop.main.localhost:8080/           300 MiB  /src/shop
+total: 800 MiB of 12.0 GiB
 `
 		if text != want {
 			t.Errorf("text:\n%s\nwant:\n%s", text, want)

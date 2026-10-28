@@ -1,0 +1,90 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "LintReport",
+  "file": "/src/shop/compose.yaml",
+  "findings": [
+    {
+      "rule": "ContainerName",
+      "severity": "error",
+      "subject": "service db",
+      "message": "db sets container_name \"shop-db\", so a second stack of this file cannot start",
+      "hint": "remove container_name; siding names containers per stack"
+    },
+    {
+      "rule": "FixedNetworkName",
+      "severity": "error",
+      "subject": "network shared",
+      "message": "the network shared has the fixed name \"everyone\", which every stack of this file would share",
+      "hint": "remove name:, or declare it external if stacks are meant to share it"
+    },
+    {
+      "rule": "FixedVolumeName",
+      "severity": "error",
+      "subject": "volume pgdata",
+      "message": "the volume pgdata has the fixed name \"shop-pgdata\", so every stack of this file would share its data",
+      "hint": "remove name:, or label it dev.siding.shared: \"true\" if stacks are meant to share it"
+    },
+    {
+      "rule": "HostPath",
+      "severity": "warning",
+      "subject": "service db",
+      "message": "db mounts /var/lib/shop from the host, and every branch's stack writes into the same directory",
+      "hint": "mount a path inside the worktree, or a named volume"
+    },
+    {
+      "rule": "HostPath",
+      "severity": "warning",
+      "subject": "service db",
+      "message": "db mounts /src/shop/init from the host, and every branch's stack writes into the same directory",
+      "hint": "mount a path inside the worktree, or a named volume"
+    },
+    {
+      "rule": "NoHealthcheck",
+      "severity": "warning",
+      "subject": "service db",
+      "message": "db has no healthcheck and no route path; the verdict only knows that it runs",
+      "hint": "add a healthcheck, so Ready means the service works, not only that it started"
+    },
+    {
+      "rule": "NetworkMode",
+      "severity": "warning",
+      "subject": "service tools",
+      "message": "tools uses network_mode \"host\", so siding cannot route it",
+      "hint": "remove network_mode to make the service reachable through the proxy"
+    },
+    {
+      "rule": "NoHealthcheck",
+      "severity": "warning",
+      "subject": "service tools",
+      "message": "tools has no healthcheck and no route path; the verdict only knows that it runs",
+      "hint": "add a healthcheck, so Ready means the service works, not only that it started"
+    },
+    {
+      "rule": "NoHealthcheck",
+      "severity": "warning",
+      "subject": "service worker",
+      "message": "worker has no healthcheck and no route path; the verdict only knows that it runs",
+      "hint": "add a healthcheck, so Ready means the service works, not only that it started"
+    },
+    {
+      "rule": "PublishedPort",
+      "severity": "info",
+      "subject": "service db",
+      "message": "db publishes 5432; siding resets published ports",
+      "hint": "reach it through its route, or with docker compose -p shop-main exec db"
+    },
+    {
+      "rule": "FixedVolumeName",
+      "severity": "info",
+      "subject": "volume cache",
+      "message": "the volume cache has the fixed name \"pip-cache\" and is shared on purpose (dev.siding.shared)"
+    },
+    {
+      "rule": "NoRoot",
+      "severity": "info",
+      "subject": "stack",
+      "message": "no service is the root of the stack's address; it answers 404 at /",
+      "hint": "give the main service dev.siding.route: \"/\""
+    }
+  ]
+}

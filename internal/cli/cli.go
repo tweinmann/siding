@@ -26,7 +26,7 @@ const (
 	exitOK       = 0
 	exitFailed   = 1
 	exitTimedOut = 2
-	// exitNoCapacity is reserved for the memory budget (v0.2).
+	// exitNoCapacity: up refused because the stack does not fit into the memory budget.
 	exitNoCapacity = 3
 	// exitInterrupted ends a command stopped by Ctrl-C or SIGTERM, without a message, as
 	// shells do.
@@ -45,6 +45,11 @@ type Options struct {
 	Getenv func(string) string
 	// OSMachineID returns the operating system's machine id, or "".
 	OSMachineID func() string
+	// IsLocalAddress reports whether an IP address belongs to this machine.
+	IsLocalAddress func(ip string) bool
+	// Stdin is where questions are answered; IsTerminal reports whether a human is there.
+	Stdin      io.Reader
+	IsTerminal func() bool
 
 	Git     Git
 	Compose Compose
@@ -60,7 +65,7 @@ type Options struct {
 type Git interface {
 	Worktree(ctx context.Context, dir string) (git.Worktree, error)
 	Dirty(ctx context.Context, top string) (bool, error)
-	Merged(ctx context.Context, top, branch string) (merged bool, base string, err error)
+	MergeState(ctx context.Context, r git.Repo, branch string) (git.MergeState, error)
 }
 
 // Compose runs docker compose.
@@ -77,6 +82,10 @@ type Docker interface {
 	Networks(ctx context.Context, labels map[string]string) ([]docker.Network, error)
 	Volumes(ctx context.Context, labels map[string]string) ([]docker.Volume, error)
 	EnsureNetwork(ctx context.Context, name string, labels map[string]string) (bool, error)
+	MemTotal(ctx context.Context) (int64, error)
+	NetworkGateway(ctx context.Context, name string) (string, error)
+	NetworkUsers(ctx context.Context, name string) (exists bool, users []string, err error)
+	RemoveNetwork(ctx context.Context, name string) error
 	Logs(ctx context.Context, id string, tail int) ([]string, error)
 	Memory(ctx context.Context, id string) (uint64, error)
 }
@@ -121,6 +130,10 @@ func New(opts Options) *cobra.Command {
 		newLogsCommand(a),
 		newOpenCommand(a),
 		newDownCommand(a),
+		newGCCommand(a),
+		newLintCommand(a),
+		newUICommand(a),
+		newTeardownCommand(a),
 		newSkillCommand(),
 	)
 	return root
@@ -167,6 +180,9 @@ func Execute(ctx context.Context, root *cobra.Command, args []string, stdout, st
 		if e.Hint != "" {
 			_, _ = fmt.Fprintf(stderr, "hint: %s\n", e.Hint)
 		}
+	}
+	if e.Code == fail.NoCapacity {
+		return exitNoCapacity
 	}
 	return exitFailed
 }

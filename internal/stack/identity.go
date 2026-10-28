@@ -16,8 +16,13 @@ const (
 	LabelWorktree = "dev.siding.worktree"
 	LabelMachine  = "dev.siding.machine"
 	LabelAgent    = "dev.siding.agent"
-	LabelRoute    = "dev.siding.route"
-	LabelPort     = "dev.siding.port"
+	LabelGitDir   = "dev.siding.gitdir"
+	LabelBudget   = "dev.siding.budget"
+	LabelShared   = "dev.siding.shared"
+	// LabelHostAlias, on siding-proxy, is what host.docker.internal resolves to in it.
+	LabelHostAlias = "dev.siding.host-alias"
+	LabelRoute     = "dev.siding.route"
+	LabelPort      = "dev.siding.port"
 
 	// LabelProject is Compose's own label naming a container's project.
 	LabelProject = "com.docker.compose.project"
@@ -62,6 +67,9 @@ type Identity struct {
 	Worktree string // absolute path of the worktree
 	Machine  string // stable machine id
 	Agent    string // optional agent name
+	// GitDir is the repository's common git directory, so gc can still ask git about the branch
+	// when the worktree is gone.
+	GitDir string
 }
 
 // RepoSlug is the slug of the repository name.
@@ -90,9 +98,14 @@ func (id Identity) Labels() map[string]string {
 	}
 }
 
-// ContainerLabels are the labels of the stack's containers: Labels plus the agent, if any.
+// ContainerLabels are the labels of the stack's containers: Labels plus the git directory and
+// the agent, if any. Those two stay off networks and volumes: they are new in v0.2 or change
+// between ups, and Compose recreates a network whose labels changed.
 func (id Identity) ContainerLabels() map[string]string {
 	l := id.Labels()
+	if id.GitDir != "" {
+		l[LabelGitDir] = id.GitDir
+	}
 	if id.Agent != "" {
 		l[LabelAgent] = id.Agent
 	}
@@ -107,5 +120,6 @@ func FromLabels(l map[string]string) Identity {
 		Worktree: l[LabelWorktree],
 		Machine:  l[LabelMachine],
 		Agent:    l[LabelAgent],
+		GitDir:   l[LabelGitDir],
 	}
 }

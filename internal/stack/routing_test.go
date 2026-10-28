@@ -134,7 +134,7 @@ func TestRoutes(t *testing.T) {
 // compose.yaml next to it) and the override siding writes for it (override.yml).
 func TestOverride(t *testing.T) {
 	t.Parallel()
-	id := Identity{Repo: "shop", Branch: "main", Worktree: "/src/shop", Machine: "0123456789abcdef", Agent: "claude"}
+	id := Identity{Repo: "shop", Branch: "main", Worktree: "/src/shop", Machine: "0123456789abcdef", Agent: "claude", GitDir: "/src/shop/.git"}
 	for _, dir := range []string{"routing"} {
 		t.Run(dir, func(t *testing.T) {
 			t.Parallel()

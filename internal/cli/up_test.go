@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -158,6 +159,66 @@ Wait for the verdict with: siding status --wait
 		e.docker.add(plain)
 		if code, _, stderr := e.run("up"); code != exitOK {
 			t.Errorf("exit %d: %s", code, stderr)
+		}
+	})
+}
+
+func TestUpBudget(t *testing.T) {
+	t.Parallel()
+	const mib = 1 << 20
+	// testConfig has four services without limits: an estimate of 1 GiB.
+	budgetEnv := func(t *testing.T, budgetMiB uint64) *env {
+		e := newEnv(t)
+		e.proxyUp(80)
+		e.docker.proxy.Labels["dev.siding.budget"] = fmt.Sprint(budgetMiB * mib)
+		other := e.id()
+		other.Branch, other.Worktree = "feature/other", "/src/other"
+		e.stackUp(other, "web")
+		e.docker.memory["shop-feature-other-web-1"] = 3584 * mib
+		return e
+	}
+
+	t.Run("over budget", func(t *testing.T) {
+		t.Parallel()
+		e := budgetEnv(t, 4096)
+		code, stdout, _ := e.run("up", "--json")
+		if code != exitNoCapacity || !strings.Contains(stdout, `"code": "NoCapacity"`) || len(e.compose.recorded()) != 0 {
+			t.Fatalf("exit %d, compose runs %d, stdout %s", code, len(e.compose.recorded()), stdout)
+		}
+		for _, want := range []string{"1.0 GiB", "3.5 GiB", "4.0 GiB", "siding gc", "--budget", "--force"} {
+			if !strings.Contains(stdout, want) {
+				t.Errorf("the error does not name %q: %s", want, stdout)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(e.repo, ".siding")); err == nil {
+			t.Error("up wrote the override although it refused")
+		}
+	})
+
+	t.Run("forced", func(t *testing.T) {
+		t.Parallel()
+		e := budgetEnv(t, 4096)
+		code, _, stderr := e.run("up", "--force")
+		if code != exitOK || !strings.Contains(stderr, "warning:") || !strings.Contains(stderr, "--force") || len(e.compose.recorded()) != 1 {
+			t.Errorf("exit %d, stderr %q", code, stderr)
+		}
+	})
+
+	t.Run("within budget", func(t *testing.T) {
+		t.Parallel()
+		e := budgetEnv(t, 8192)
+		if code, _, stderr := e.run("up"); code != exitOK || stderr != "" {
+			t.Errorf("exit %d, stderr %q", code, stderr)
+		}
+	})
+
+	t.Run("the stack itself does not count twice", func(t *testing.T) {
+		t.Parallel()
+		e := budgetEnv(t, 4608) // 3584 + 1024 fits exactly
+		e.stackUp(e.id(), "web")
+		e.docker.memory["shop-main-web-1"] = 900 * mib
+		if code, stdout, _ := e.run("up", "--json"); code != exitOK {
+			t.Errorf("exit %d: %s", code, stdout)
 		}
 	})
 }

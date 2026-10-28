@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="5">
+<title>siding</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; --muted: #888; --bar: #3a7; --over: #c43; }
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 2rem auto; max-width: 70rem; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1rem; margin: 2rem 0 .5rem; }
+  .muted { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .meter { height: .6rem; background: var(--line); border-radius: .3rem; overflow: hidden; max-width: 30rem; }
+  .meter > div { height: 100%; background: var(--bar); }
+  .meter.over > div { background: var(--over); }
+  .state-partial, .state-stopped { color: var(--over); }
+</style>
+</head>
+<body>
+<h1>siding</h1>
+<p class="muted">Every stack on this machine. Refreshes every 5 seconds; read-only, act with the siding CLI.</p>
+
+<h2>Memory</h2>
+<p>800 MiB of 12.0 GiB (6 %)</p>
+<div class="meter"><div style="width: 6%"></div></div>
+
+<h2>Stacks</h2>
+
+<table>
+<tr><th>Repository</th><th>Branch</th><th>State</th><th>Address</th><th class="num">Memory</th><th>Worktree</th></tr>
+
+<tr>
+  <td>shop</td><td>feature/login</td><td class="state-partial">partial</td>
+  <td><a href="http://shop.feature-login.localhost:8080/">http://shop.feature-login.localhost:8080/</a></td><td class="num">500 MiB</td>
+  <td>/src/shop-login <span class="muted">(missing)</span></td>
+</tr>
+
+<tr>
+  <td>shop</td><td>main</td><td class="state-running">running</td>
+  <td><a href="http://shop.main.localhost:8080/">http://shop.main.localhost:8080/</a></td><td class="num">300 MiB</td>
+  <td>/src/shop</td>
+</tr>
+
+</table>
+
+
+<h2>Can go</h2>
+
+<table>
+<tr><th>Stack</th><th>Branch</th><th>Reason</th><th>Removes</th></tr>
+
+<tr>
+  <td>shop-done</td><td>done</td><td>Merged</td>
+  <td>1 containers, 1 networks, 1 volumes</td>
+</tr>
+
+<tr>
+  <td>shop-old</td><td>old</td><td>WorktreeGone</td>
+  <td>1 containers, 1 networks, 1 volumes</td>
+</tr>
+
+</table>
+<p class="muted">Remove them with <code>siding gc</code>.</p>
+
+</body>
+</html>

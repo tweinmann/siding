@@ -18,16 +18,19 @@ import (
 const documentAPIVersion = "siding.dev/v1alpha1"
 
 const (
-	kindAddress   = "Address"
-	kindDown      = "Down"
-	kindError     = "Error"
-	kindLogs      = "Logs"
-	kindSetup     = "Setup"
-	kindSkill     = "Skill"
-	kindStack     = "Stack"
-	kindStackList = "StackList"
-	kindStatus    = "Status"
-	kindVersion   = "Version"
+	kindAddress    = "Address"
+	kindDown       = "Down"
+	kindError      = "Error"
+	kindGC         = "GC"
+	kindLintReport = "LintReport"
+	kindLogs       = "Logs"
+	kindSetup      = "Setup"
+	kindSkill      = "Skill"
+	kindStack      = "Stack"
+	kindStackList  = "StackList"
+	kindStatus     = "Status"
+	kindTeardown   = "Teardown"
+	kindVersion    = "Version"
 )
 
 // jsonFlag is the name of the flag, looked up again by Execute to report an error as a document.
@@ -106,6 +109,8 @@ type setupDocument struct {
 	URL       string `json:"url"`
 	// State is created, updated or unchanged.
 	State string `json:"state"`
+	// BudgetBytes is the memory budget for all stacks.
+	BudgetBytes int64 `json:"budgetBytes"`
 }
 
 // stackDocument is what up prints without --wait.
@@ -158,6 +163,7 @@ type stackListDocument struct {
 	header
 	Stacks      []stackEntry `json:"stacks,omitempty"`
 	MemoryBytes uint64       `json:"memoryBytes,omitempty"`
+	BudgetBytes int64        `json:"budgetBytes"`
 }
 
 type stackEntry struct {
@@ -208,4 +214,63 @@ type skillDocument struct {
 	header
 	Name string `json:"name"`
 	Text string `json:"text"`
+}
+
+// gcDocument is what gc prints, and what the overview's /api/gc returns.
+type gcDocument struct {
+	header
+	DryRun bool      `json:"dryRun,omitempty"`
+	Stacks []gcStack `json:"stacks,omitempty"`
+	Kept   []gcKept  `json:"kept,omitempty"`
+}
+
+type gcStack struct {
+	Project  string `json:"project"`
+	Repo     string `json:"repo"`
+	Branch   string `json:"branch"`
+	Worktree string `json:"worktree"`
+	// Reason is Merged or WorktreeGone.
+	Reason      string   `json:"reason"`
+	Containers  []string `json:"containers,omitempty"`
+	Networks    []string `json:"networks,omitempty"`
+	Volumes     []string `json:"volumes,omitempty"`
+	KeptVolumes []string `json:"keptVolumes,omitempty"`
+}
+
+type gcKept struct {
+	Project  string `json:"project"`
+	Repo     string `json:"repo"`
+	Branch   string `json:"branch"`
+	Worktree string `json:"worktree"`
+	// Reason is Dirty, Unmerged or DefaultBranch.
+	Reason string `json:"reason"`
+}
+
+// lintDocument is what lint --json prints.
+type lintDocument struct {
+	header
+	File     string        `json:"file"`
+	Findings []lintFinding `json:"findings,omitempty"`
+}
+
+type lintFinding struct {
+	Rule string `json:"rule"`
+	// Severity is error, warning or info.
+	Severity string `json:"severity"`
+	Subject  string `json:"subject"`
+	Message  string `json:"message"`
+	Hint     string `json:"hint,omitempty"`
+}
+
+// teardownDocument is what teardown prints.
+type teardownDocument struct {
+	header
+	DryRun bool `json:"dryRun,omitempty"`
+	// Container and Network are what teardown removes (or would).
+	Container string `json:"container,omitempty"`
+	Network   string `json:"network,omitempty"`
+	// KeptNetwork is the proxy network when stacks still use it.
+	KeptNetwork string `json:"keptNetwork,omitempty"`
+	// Stacks keep running as plain Compose projects.
+	Stacks []string `json:"stacks,omitempty"`
 }

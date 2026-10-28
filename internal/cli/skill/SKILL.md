@@ -31,6 +31,9 @@ Read its `verdict` and the exit code:
   listens on 127.0.0.1 instead of 0.0.0.0, or on another port than the one routed), `NotReady`
   means it is still starting. Read the hint and the logs; if it is only slow, run
   `siding status --wait --json --timeout 5m`.
+- **3, `NoCapacity`**: the stack does not fit into the machine's memory budget; nothing was
+  started. Stop and tell the user, with the `message` of the `Error` document. Freeing memory
+  or raising the budget is the user's decision.
 
 An `Error` document (exit 1, `kind: Error`) means siding could not act at all; its `code`,
 `message` and `hint` say why. `ProxyNotRunning`: ask the user to run `siding setup`.

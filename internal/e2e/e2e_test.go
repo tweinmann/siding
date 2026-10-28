@@ -23,6 +23,7 @@ import (
 	"github.com/tweinmann/siding/internal/compose"
 	"github.com/tweinmann/siding/internal/docker"
 	"github.com/tweinmann/siding/internal/git"
+	"github.com/tweinmann/siding/internal/overview"
 	"github.com/tweinmann/siding/internal/probe"
 	"github.com/tweinmann/siding/internal/proxy"
 	"github.com/tweinmann/siding/internal/stack"
@@ -93,14 +94,22 @@ func newMachine(t *testing.T) *machine {
 // siding runs one command in dir and returns exit code and stdout; stderr goes to the log.
 func (m *machine) siding(dir string, args ...string) (int, string) {
 	m.t.Helper()
+	return m.sidingCtx(context.Background(), dir, args...)
+}
+
+func (m *machine) sidingCtx(ctx context.Context, dir string, args ...string) (int, string) {
+	m.t.Helper()
+	// A machine id of its own: gc acts on every stack of "this machine", and must only ever see
+	// the tests' stacks, never one a developer started in the same daemon.
 	opts := cli.Options{
-		Dir: dir, Home: m.home, Getenv: os.Getenv, OSMachineID: stack.OSMachineID,
+		Dir: dir, Home: m.home, Getenv: os.Getenv, OSMachineID: func() string { return "siding-test-e2e" },
+		IsLocalAddress: overview.IsLocalAddress, Stdin: strings.NewReader(""), IsTerminal: func() bool { return false },
 		Git: git.Client{}, Compose: &compose.CLI{}, Docker: &docker.Client{},
 		Probe: probe.HTTP{Header: stack.ServiceHeader}, Browser: noBrowser{}, Clock: cli.SystemClock{},
 		Proxy: testProxy,
 	}
 	var out, errOut bytes.Buffer
-	code := cli.Execute(context.Background(), cli.New(opts), args, &out, &errOut)
+	code := cli.Execute(ctx, cli.New(opts), args, &out, &errOut)
 	m.t.Logf("siding %s: exit %d\n%s", strings.Join(args, " "), code, errOut.String())
 	return code, out.String()
 }
@@ -304,6 +313,134 @@ func TestStacks(t *testing.T) {
 		}
 		if out := run(t, "", "docker", "volume", "ls", "-q", "--filter", "name=siding-test-shop-feature-x_data"); strings.TrimSpace(out) != "" {
 			t.Errorf("the volume survived --force: %q", out)
+		}
+	})
+
+	t.Run("down --volumes after a squash merge", func(t *testing.T) {
+		squash := repo(t, "squash", shopCompose, "", "feature/s")
+		origin := filepath.Join(t.TempDir(), "origin.git")
+		gitIn(t, squash, "init", "-q", "--bare", origin)
+		gitIn(t, squash, "remote", "add", "origin", origin)
+		gitIn(t, squash, "push", "-q", "-u", "origin", "feature/s")
+		gitIn(t, squash, "push", "-q", "origin", "--delete", "feature/s")
+		if code, out := m.siding(squash, "up", "--repo", "siding-test-squash", "--wait", "--json"); code != 0 {
+			t.Fatalf("up: exit %d\n%s", code, out)
+		}
+		if code, out := m.siding(squash, "down", "--volumes", "--json"); code != 0 || !strings.Contains(out, "siding-test-squash-feature-s_data") {
+			t.Errorf("exit %d\n%s", code, out)
+		}
+	})
+
+	t.Run("budget", func(t *testing.T) {
+		budgeted := repo(t, "budget", shopCompose, "", "feature/b")
+		// The stack's estimate is 512 MiB (two services without limits).
+		if code, out := m.siding(t.TempDir(), "setup", "--budget", "64m", "--json"); code != 0 {
+			t.Fatalf("setup --budget: exit %d\n%s", code, out)
+		}
+		code, out := m.siding(budgeted, "up", "--repo", "siding-test-budget", "--wait", "--json")
+		if code != 3 || decode(t, out).Code != "NoCapacity" {
+			t.Errorf("over budget: exit %d\n%s", code, out)
+		}
+		if out := run(t, "", "docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=siding-test-budget-feature-b"); strings.TrimSpace(out) != "" {
+			t.Errorf("up started containers although it refused: %q", out)
+		}
+		if code, out := m.siding(budgeted, "up", "--repo", "siding-test-budget", "--force", "--wait", "--json"); code != 0 {
+			t.Errorf("--force: exit %d\n%s", code, out)
+		}
+		if code, out := m.siding(t.TempDir(), "setup", "--budget", "default", "--json"); code != 0 {
+			t.Fatalf("setup --budget default: exit %d\n%s", code, out)
+		}
+	})
+
+	t.Run("gc", func(t *testing.T) {
+		merged := repo(t, "gcm", shopCompose, "", "feature/m")
+		unmerged := repo(t, "gcu", shopCompose, "", "feature/u")
+		for dir, name := range map[string]string{merged: "siding-test-gcm", unmerged: "siding-test-gcu"} {
+			if code, out := m.siding(dir, "up", "--repo", name, "--wait", "--json"); code != 0 {
+				t.Fatalf("up %s: exit %d\n%s", name, code, out)
+			}
+		}
+		// Merge feature/m into main, move main on, and go back: a clean, merged worktree.
+		gitIn(t, merged, "switch", "-q", "main")
+		gitIn(t, merged, "merge", "-q", "--ff-only", "feature/m")
+		gitIn(t, merged, "commit", "-q", "--allow-empty", "-m", "after the merge")
+		gitIn(t, merged, "switch", "-q", "feature/m")
+
+		code, out := m.siding(t.TempDir(), "gc", "--dry-run", "--json")
+		if code != 0 || !strings.Contains(out, `"project": "siding-test-gcm-feature-m"`) || !strings.Contains(out, `"reason": "Merged"`) {
+			t.Fatalf("dry run: exit %d\n%s", code, out)
+		}
+		if !strings.Contains(out, `"project": "siding-test-gcu-feature-u"`) || !strings.Contains(out, `"reason": "Unmerged"`) {
+			t.Errorf("the unmerged stack is not kept: %s", out)
+		}
+		if code, out := m.siding(t.TempDir(), "gc", "--json"); code != 1 || decode(t, out).Code != "NotInteractive" {
+			t.Errorf("without --yes: exit %d\n%s", code, out)
+		}
+		if code, out := m.siding(t.TempDir(), "gc", "--yes", "--json"); code != 0 || !strings.Contains(out, "siding-test-gcm-feature-m_data") {
+			t.Fatalf("--yes: exit %d\n%s", code, out)
+		}
+		if out := run(t, "", "docker", "volume", "ls", "-q", "--filter", "name=siding-test-gcm-feature-m_data"); strings.TrimSpace(out) != "" {
+			t.Errorf("the merged stack's volume survived: %q", out)
+		}
+		if _, err := os.Stat(merged); err != nil {
+			t.Errorf("gc removed the worktree: %v", err)
+		}
+		if out := run(t, "", "docker", "ps", "-q", "--filter", "label=com.docker.compose.project=siding-test-gcu-feature-u"); strings.TrimSpace(out) == "" {
+			t.Error("gc removed the unmerged stack")
+		}
+	})
+
+	t.Run("ui", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan int, 1)
+		go func() {
+			code, _ := m.sidingCtx(ctx, t.TempDir(), "ui")
+			done <- code
+		}()
+		var code int
+		for i := 0; i < 40 && code != 200; i++ {
+			time.Sleep(250 * time.Millisecond)
+			code, _, _ = get(t, "siding.localhost", "/api/stacks")
+		}
+		if code != 200 {
+			t.Errorf("siding.localhost through the proxy: %d", code)
+		}
+		cancel()
+		if got := <-done; got != 130 {
+			t.Errorf("ui ended with %d, want 130", got)
+		}
+		for i := 0; i < 40 && code != 404; i++ {
+			time.Sleep(250 * time.Millisecond)
+			code, _, _ = get(t, "siding.localhost", "/")
+		}
+		if code != 404 {
+			t.Errorf("after ui stopped: %d, want 404", code)
+		}
+	})
+
+	t.Run("teardown", func(t *testing.T) {
+		kept := repo(t, "keep", shopCompose, "", "feature/k")
+		if code, out := m.siding(kept, "up", "--repo", "siding-test-keep", "--wait", "--json"); code != 0 {
+			t.Fatalf("up: exit %d\n%s", code, out)
+		}
+		code, out := m.siding(t.TempDir(), "teardown", "--json")
+		if code != 0 || !strings.Contains(out, `"keptNetwork": "siding-test-e2e"`) || !strings.Contains(out, "siding-test-keep-feature-k") {
+			t.Fatalf("with a stack: exit %d\n%s", code, out)
+		}
+		if out := run(t, "", "docker", "ps", "-aq", "--filter", "name=^siding-test-e2e-proxy$"); strings.TrimSpace(out) != "" {
+			t.Errorf("the proxy survived: %q", out)
+		}
+		if out := run(t, "", "docker", "ps", "-q", "--filter", "label=com.docker.compose.project=siding-test-keep-feature-k"); strings.TrimSpace(out) == "" {
+			t.Error("teardown stopped the stack")
+		}
+		if code, out := m.siding(kept, "down", "--json"); code != 0 {
+			t.Fatalf("down: exit %d\n%s", code, out)
+		}
+		if code, out := m.siding(t.TempDir(), "teardown", "--json"); code != 0 || !strings.Contains(out, `"network": "siding-test-e2e"`) {
+			t.Fatalf("without a stack: exit %d\n%s", code, out)
+		}
+		if out := run(t, "", "docker", "network", "ls", "-q", "--filter", "name=^siding-test-e2e$"); strings.TrimSpace(out) != "" {
+			t.Errorf("the network survived: %q", out)
 		}
 	})
 }

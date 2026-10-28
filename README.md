@@ -3,8 +3,9 @@
 siding gives every git worktree its own Docker Compose stack, at its own `*.localhost` address,
 and tells you and your coding agents whether it actually runs and what it costs.
 
-> **Pre-alpha (v0.1).** Stacks per worktree, routing through one local proxy and the verdict
-> of `siding status` work; expect rough edges and changes before v1. There are no releases
+> **Pre-alpha (v0.2).** Stacks per worktree, routing through one local proxy, the verdict of
+> `siding status`, the overview `siding ui`, a memory budget, `gc` and `lint` work; expect
+> rough edges and changes before v1. There are no releases
 > yet: build it from source (see below). The plan is in [openspec/changes/](openspec/changes)
 > (one change per phase), what siding does today in [openspec/specs/](openspec/specs).
 
@@ -17,6 +18,7 @@ siding needs Docker with Compose 2.24 or later, and git. Your compose file stays
 ```sh
 siding setup                 # Traefik as siding-proxy on 127.0.0.1:80
 siding setup --port 8080     # if port 80 is taken, or inside siding's devcontainer
+siding teardown              # remove the proxy again; stacks keep running, --dry-run lists it
 ```
 
 Every stack is reached through this one proxy at `http://<repo>.<branch>.localhost`. Browsers
@@ -57,6 +59,51 @@ answers through the proxy. A failure names the service, the reason, a hint and i
 lines. Exit codes: 0 Ready, 1 Failed, 2 TimedOut or still starting. Every command prints one
 JSON document with `--json`, for scripts and agents.
 
+### Before the first up: lint
+
+```sh
+siding lint                  # exits 1 when it finds an error; --json for a LintReport
+```
+
+`lint` checks the compose file siding would use and never changes it.
+
+| Rule | Severity | Finds |
+|---|---|---|
+| `ContainerName` | error | a fixed `container_name`: a second stack cannot start |
+| `FixedNetworkName` | error | an own network with a fixed `name`, shared by every stack |
+| `FixedVolumeName` | error (info with `dev.siding.shared`) | an own volume with a fixed `name`, so every stack shares its data |
+| `InvalidRoute`, `AmbiguousPort` | error | route labels `siding up` would refuse |
+| `HostPath` | warning | a bind mount of a path outside the worktree, shared by every stack |
+| `NetworkMode` | warning | `network_mode`: siding cannot route the service |
+| `NoHealthcheck` | warning | no healthcheck and no route: Ready only means it started |
+| `PublishedPort` | info | published ports, which siding resets |
+| `NoRoot` | info | HTTP services, but none at `/` |
+
+### Memory budget
+
+```sh
+siding setup --budget 12g        # memory for all stacks together; "default" is 75 % of Docker's
+siding up --force                # start even if the stack does not fit
+```
+
+Before `up` starts a stack, siding adds the memory the other stacks use now to what this
+stack will need: per service its `mem_limit` (or `deploy.resources.limits.memory`), or
+256 MiB without a limit. If that exceeds the budget, `up` refuses with exit code 3 and says
+how much is missing. Setting `mem_limit` on big services makes the estimate right. `siding ps`
+shows the total against the budget.
+
+### Overview
+
+```sh
+siding ui                    # http://siding.localhost while it runs; Ctrl-C stops it
+```
+
+The page lists every stack with its address and memory, the total against the budget, and what
+`siding gc` would remove. It refreshes itself and is read-only; `/api/stacks` and `/api/gc`
+return the documents of `siding ps --json` and `siding gc --dry-run --json`. It listens on this
+machine only, and nothing of it keeps running after Ctrl-C. After upgrading siding, run
+`siding setup` once, so the proxy knows the route.
+
 ### Logs, address, and taking it down
 
 ```sh
@@ -66,6 +113,35 @@ siding down                  # remove containers and networks; volumes and data 
 siding down --volumes        # also the data; refused while the branch is unmerged or the
                              # worktree dirty, unless --force; --dry-run lists it first
 ```
+
+### After a merge: gc
+
+```sh
+siding gc --dry-run          # what can go, and what stays and why
+siding gc                    # asks, then removes; --yes for scripts
+```
+
+`gc` removes the stacks of merged branches whose worktree is clean, with their volumes, and
+the containers of stacks whose worktree you deleted (their volumes only if the branch is
+merged). A branch counts as merged when the default branch has moved past it, or when its
+upstream branch is gone, as after a squash-merged pull request and `git fetch --prune`. `gc`
+never deletes worktrees or branches, and never the stack of the default branch or of a branch
+without commits of its own.
+
+### In a devcontainer
+
+siding works inside a devcontainer that runs its own Docker daemon (Docker-in-Docker), as this
+repository's does. Then:
+
+- `siding ps`, `siding ui` and the budget see the stacks of that container, not the whole
+  machine; for one view of everything, run siding on the machine itself;
+- forward the proxy's port (`forwardPorts` with `requireLocalPort`) and run
+  `siding setup --port` with it; each devcontainer needs its own port;
+- the container has its own image cache.
+
+Mounting the host's Docker socket into the devcontainer (Docker-outside-of-Docker) is not
+supported: it gives everything in the container root on the host, the opposite of why agents
+run in devcontainers, and bind mounts break unless the paths match inside and out.
 
 ### For coding agents
 
@@ -90,6 +166,7 @@ on your machine and siding's tests never touch your Docker containers.
    | `just test` | formatting, vet, unit tests with `-race`, golangci-lint, OpenSpec validation (as in CI) |
    | `just golden` | rewrite golden files after an intended output change |
    | `just build` | build `bin/siding` |
+   | `just build-darwin` | build `bin/siding-darwin-arm64` and `-amd64`, to run siding on your Mac |
    | `just smoke-docker` | Compose, `ports: !reset []` and Traefik routing against the container's own daemon |
    | `just smoke-stacks` | siding's own commands end to end against the container's own daemon |
 

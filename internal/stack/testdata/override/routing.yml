@@ -5,6 +5,7 @@ services:
     labels:
       "dev.siding.agent": "claude"
       "dev.siding.branch": "main"
+      "dev.siding.gitdir": "/src/shop/.git"
       "dev.siding.machine": "0123456789abcdef"
       "dev.siding.repo": "shop"
       "dev.siding.worktree": "/src/shop"
@@ -17,6 +18,7 @@ services:
     labels:
       "dev.siding.agent": "claude"
       "dev.siding.branch": "main"
+      "dev.siding.gitdir": "/src/shop/.git"
       "dev.siding.machine": "0123456789abcdef"
       "dev.siding.repo": "shop"
       "dev.siding.worktree": "/src/shop"
@@ -40,6 +42,7 @@ services:
     labels:
       "dev.siding.agent": "claude"
       "dev.siding.branch": "main"
+      "dev.siding.gitdir": "/src/shop/.git"
       "dev.siding.machine": "0123456789abcdef"
       "dev.siding.repo": "shop"
       "dev.siding.worktree": "/src/shop"
@@ -59,6 +62,7 @@ services:
     labels:
       "dev.siding.agent": "claude"
       "dev.siding.branch": "main"
+      "dev.siding.gitdir": "/src/shop/.git"
       "dev.siding.machine": "0123456789abcdef"
       "dev.siding.repo": "shop"
       "dev.siding.worktree": "/src/shop"
@@ -75,6 +79,7 @@ services:
     labels:
       "dev.siding.agent": "claude"
       "dev.siding.branch": "main"
+      "dev.siding.gitdir": "/src/shop/.git"
       "dev.siding.machine": "0123456789abcdef"
       "dev.siding.repo": "shop"
       "dev.siding.worktree": "/src/shop"
@@ -86,6 +91,7 @@ services:
     labels:
       "dev.siding.agent": "claude"
       "dev.siding.branch": "main"
+      "dev.siding.gitdir": "/src/shop/.git"
       "dev.siding.machine": "0123456789abcdef"
       "dev.siding.repo": "shop"
       "dev.siding.worktree": "/src/shop"
@@ -106,6 +112,7 @@ services:
     labels:
       "dev.siding.agent": "claude"
       "dev.siding.branch": "main"
+      "dev.siding.gitdir": "/src/shop/.git"
       "dev.siding.machine": "0123456789abcdef"
       "dev.siding.repo": "shop"
       "dev.siding.worktree": "/src/shop"

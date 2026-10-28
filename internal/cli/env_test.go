@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -64,7 +67,7 @@ func newEnv(t *testing.T) *env {
 		t:       t,
 		base:    base,
 		repo:    filepath.Join(base, "shop"),
-		docker:  &fakeDocker{logs: map[string][]string{}, memory: map[string]uint64{}},
+		docker:  &fakeDocker{logs: map[string][]string{}, memory: map[string]uint64{}, memTotal: 16 << 30},
 		compose: &fakeCompose{config: testConfig},
 		probe:   &fakeProbe{answers: map[string]probe.Response{}},
 		browser: &fakeBrowser{},
@@ -85,15 +88,58 @@ func newEnv(t *testing.T) *env {
 		Home:        filepath.Join(base, "home"),
 		Getenv:      func(k string) string { return e.envVars[k] },
 		OSMachineID: func() string { return "not-a-real-machine-id" },
-		Git:         git.Client{},
-		Compose:     e.compose,
-		Docker:      e.docker,
-		Probe:       e.probe,
-		Browser:     e.browser,
-		Clock:       e.clock,
-		Proxy:       proxy.Default(),
+		Stdin:       strings.NewReader(""),
+		IsTerminal:  func() bool { return false },
+		// The daemon runs on this machine, as in the devcontainer.
+		IsLocalAddress: func(ip string) bool { return ip == "172.19.0.1" },
+		Git:            git.Client{},
+		Compose:        e.compose,
+		Docker:         e.docker,
+		Probe:          e.probe,
+		Browser:        e.browser,
+		Clock:          e.clock,
+		Proxy:          proxy.Default(),
 	}
+	e.compose.onProxy = e.composeProxy
 	return e
+}
+
+var publishedPort = regexp.MustCompile(`"127\.0\.0\.1:(\d+):80"`)
+var budgetLabel = regexp.MustCompile(`dev\.siding\.budget: "(\d+)"`)
+var hostAliasLabel = regexp.MustCompile(`dev\.siding\.host-alias: "([^"]+)"`)
+
+// composeProxy does what docker compose up does for the proxy's project: it recreates the
+// container, with a new ID, only when the compose file changed or the container is gone.
+func (e *env) composeProxy(r composeRun) {
+	if r.args[0] == "down" {
+		e.docker.mu.Lock()
+		e.docker.proxy, e.docker.proxyFile = nil, ""
+		e.docker.mu.Unlock()
+		return
+	}
+	data, err := os.ReadFile(r.inv.Files[0])
+	if err != nil {
+		e.t.Error(err)
+		return
+	}
+	e.docker.mu.Lock()
+	defer e.docker.mu.Unlock()
+	if e.docker.proxy != nil && e.docker.proxy.State == "running" && e.docker.proxyFile == string(data) {
+		return
+	}
+	e.docker.proxyFile = string(data)
+	e.docker.sidingNetwork = true
+	e.docker.proxyGen++
+	port, _ := strconv.Atoi(publishedPort.FindStringSubmatch(string(data))[1])
+	labels := map[string]string{}
+	if m := budgetLabel.FindStringSubmatch(string(data)); m != nil {
+		labels[stack.LabelBudget] = m[1]
+	}
+	if m := hostAliasLabel.FindStringSubmatch(string(data)); m != nil {
+		labels[stack.LabelHostAlias] = m[1]
+	}
+	e.docker.proxy = &docker.Container{ID: fmt.Sprintf("proxy-%d", e.docker.proxyGen), Name: "siding-proxy", Image: proxy.Image,
+		State: "running", Labels: labels, Ports: []docker.Port{{HostIP: "127.0.0.1", HostPort: port, ContainerPort: 80}}}
 }
 
 func (e *env) git(args ...string) {
@@ -163,15 +209,22 @@ func container(id stack.Identity, service, state, health string, exit int) docke
 }
 
 type fakeDocker struct {
-	mu         sync.Mutex
-	pingErr    error
-	proxy      *docker.Container
-	containers []docker.Container
-	networks   []docker.Network
-	volumes    []docker.Volume
-	logs       map[string][]string
-	memory     map[string]uint64
-	ensured    []string
+	mu        sync.Mutex
+	pingErr   error
+	memTotal  int64
+	proxy     *docker.Container
+	proxyFile string // the compose file the proxy was created from
+	proxyGen  int
+	// sidingNetwork: the network siding exists. Its users are the proxy and every running stack
+	// container.
+	sidingNetwork   bool
+	removedNetworks []string
+	containers      []docker.Container
+	networks        []docker.Network
+	volumes         []docker.Volume
+	logs            map[string][]string
+	memory          map[string]uint64
+	ensured         []string
 }
 
 func (d *fakeDocker) add(c docker.Container) {
@@ -257,6 +310,40 @@ func (d *fakeDocker) EnsureNetwork(_ context.Context, name string, _ map[string]
 	return true, nil
 }
 
+func (d *fakeDocker) MemTotal(context.Context) (int64, error) { return d.memTotal, nil }
+
+func (d *fakeDocker) NetworkGateway(context.Context, string) (string, error) {
+	return "172.19.0.1", nil
+}
+
+func (d *fakeDocker) NetworkUsers(_ context.Context, name string) (bool, []string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if name != "siding" || !d.sidingNetwork {
+		return false, nil, nil
+	}
+	var users []string
+	if d.proxy != nil {
+		users = append(users, d.proxy.Name)
+	}
+	for _, c := range d.containers {
+		if c.State == "running" {
+			users = append(users, c.Name)
+		}
+	}
+	return true, users, nil
+}
+
+func (d *fakeDocker) RemoveNetwork(_ context.Context, name string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.removedNetworks = append(d.removedNetworks, name)
+	if name == "siding" {
+		d.sidingNetwork = false
+	}
+	return nil
+}
+
 func (d *fakeDocker) Logs(_ context.Context, id string, tail int) ([]string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -283,8 +370,9 @@ type fakeCompose struct {
 	config string
 	runs   []composeRun
 	runErr error
-	// onRun, if set, runs after each recorded run, e.g. to start containers.
-	onRun func(composeRun)
+	// onRun, if set, runs after each recorded run, e.g. to start containers; onProxy instead
+	// for runs of the proxy's project.
+	onRun, onProxy func(composeRun)
 }
 
 func (c *fakeCompose) Config(context.Context, compose.Invocation) ([]byte, error) {
@@ -296,6 +384,9 @@ func (c *fakeCompose) Run(_ context.Context, inv compose.Invocation, args []stri
 	r := composeRun{inv: inv, args: args}
 	c.runs = append(c.runs, r)
 	onRun, err := c.onRun, c.runErr
+	if inv.Project == "siding" {
+		onRun = c.onProxy
+	}
 	c.mu.Unlock()
 	if err != nil {
 		return err

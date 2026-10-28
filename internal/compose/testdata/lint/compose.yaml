@@ -1,0 +1,35 @@
+# Triggers every lint rule except the routing errors, and every field the parser reads.
+services:
+  web:
+    image: busybox:1.37.0
+    expose: ["3000"]
+    labels: {dev.siding.route: "/app"}
+    deploy:
+      replicas: 2
+      resources: {limits: {memory: 512m}}
+    healthcheck: {test: ["CMD", "true"]}
+  db:
+    image: busybox:1.37.0
+    container_name: shop-db
+    ports: ["5432:5432"]
+    mem_limit: 1g
+    volumes:
+      - /var/lib/shop:/data
+      - ./init:/docker-entrypoint-initdb.d
+      - pgdata:/pgdata
+      - cache:/cache
+    healthcheck: {test: ["NONE"]}
+  worker:
+    image: busybox:1.37.0
+    scale: 3
+    networks: [shared]
+  tools:
+    image: busybox:1.37.0
+    network_mode: host
+volumes:
+  pgdata: {name: shop-pgdata}
+  cache:
+    name: pip-cache
+    labels: {dev.siding.shared: "true"}
+networks:
+  shared: {name: everyone}

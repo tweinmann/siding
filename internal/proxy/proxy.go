@@ -26,11 +26,35 @@ func Default() Config {
 	return Config{Project: "siding", Container: "siding-proxy", Network: "siding", Image: Image, DefaultPort: 80}
 }
 
+// RoutesMount is where the proxy reads route files that siding ui writes.
+const RoutesMount = "/etc/siding/routes"
+
+// HostGateway is the host alias when the Docker daemon runs in a VM: Docker's own name for the
+// machine outside it.
+const HostGateway = "host-gateway"
+
+// Settings are what one setup chooses for the proxy.
+type Settings struct {
+	Port    int
+	Machine string
+	// Budget is the memory budget in bytes, 0 for the default.
+	Budget int64
+	// RoutesDir is the directory on this machine with the route files of siding ui.
+	RoutesDir string
+	// HostAlias is what host.docker.internal resolves to in the proxy: the proxy network's
+	// gateway when that is an address of this machine, else HostGateway (design D2).
+	HostAlias string
+}
+
 // ComposeFile renders the proxy's compose file. The constraint keeps Traefik to containers
 // siding labelled for this proxy's network, so foreign Traefik labels on the same daemon are
 // never exposed.
-func ComposeFile(c Config, port int, machine string) []byte {
+func ComposeFile(c Config, s Settings) []byte {
 	constraint := fmt.Sprintf("LabelRegex(`dev.siding.repo`, `.+`) && Label(`traefik.docker.network`, `%s`)", c.Network)
+	labels := fmt.Sprintf("      dev.siding.machine: %q\n      dev.siding.host-alias: %q\n", s.Machine, s.HostAlias)
+	if s.Budget > 0 {
+		labels += fmt.Sprintf("      dev.siding.budget: \"%d\"\n", s.Budget)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, `# Written by siding setup. Do not edit: siding setup rewrites it.
 services:
@@ -44,15 +68,19 @@ services:
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=%s
       - %q
+      - --providers.file.directory=%s
+      - --providers.file.watch=true
       - --ping=true
     ports:
       - "127.0.0.1:%d:80"
+    extra_hosts:
+      - "host.docker.internal:%s"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - %q
     networks: [proxy]
     labels:
-      dev.siding.machine: %q
-    healthcheck:
+%s    healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 2s
       timeout: 2s
@@ -61,6 +89,7 @@ networks:
   proxy:
     name: %q
     external: true
-`, c.Image, c.Container, c.Network, "--providers.docker.constraints="+constraint, port, machine, c.Network)
+`, c.Image, c.Container, c.Network, "--providers.docker.constraints="+constraint, RoutesMount, s.Port, s.HostAlias,
+		s.RoutesDir+":"+RoutesMount+":ro", labels, c.Network)
 	return []byte(b.String())
 }
