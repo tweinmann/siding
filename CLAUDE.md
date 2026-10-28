@@ -14,11 +14,11 @@ changing architecture.
 
 ## Status
 
-Phase 0 approved (2026-10-28). Phase 1 (`phase-1-stacks-and-routing`, v0.1) implemented,
-waiting for approval (2026-10-28), not yet archived: `setup`, `up [--wait]`, `status [--wait]`,
-`ps`, `logs`, `open`, `down [--volumes]`, `skill`, routing by host and path through
-`siding-proxy`, `just smoke-stacks`. After approval: `/opsx:archive`, then Phase 2
-(`phase-2-overview-and-budget`, v0.2).
+Phase 0 approved (2026-10-28). Phase 1 (v0.1) approved and archived (2026-10-28,
+`openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing`): `setup`, `up [--wait]`,
+`status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`, `skill`, routing by host and path
+through `siding-proxy`, `just smoke-stacks`. Next: Phase 2 (`phase-2-overview-and-budget`,
+v0.2), starting with `/opsx:propose`.
 
 ## Working agreements
 
