@@ -46,7 +46,7 @@ it SHALL print `error: <message>` on stderr, followed by a hint line when there 
 
 #### Scenario: The error codes
 - **WHEN** a command fails
-- **THEN** its code is one of `InvalidArguments`, `NotAGitRepository`, `NoBranch`, `ComposeFileNotFound`, `ComposeFailed`, `DockerUnavailable`, `ProxyNotRunning`, `PortInUse`, `InvalidRoute`, `AmbiguousPort`, `SlugCollision`, `StackNotFound`, `UnmergedBranch`, `DirtyWorktree`, `NoCapacity`, `NotInteractive`, `SnapshotNotFound`, `SnapshotExists`, or `Internal` for an unexpected error
+- **THEN** its code is one of `InvalidArguments`, `NotAGitRepository`, `NoBranch`, `ComposeFileNotFound`, `ComposeFailed`, `DockerUnavailable`, `ProxyNotRunning`, `PortInUse`, `InvalidRoute`, `AmbiguousPort`, `SlugCollision`, `StackNotFound`, `UnmergedBranch`, `DirtyWorktree`, `NoCapacity`, `NotInteractive`, `SnapshotNotFound`, `SnapshotExists`, `EnvFileMissing`, or `Internal` for an unexpected error
 
 #### Scenario: No capacity
 - **WHEN** `siding up --json` refuses because the stack does not fit into the memory budget

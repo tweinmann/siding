@@ -19,7 +19,8 @@ Phase 0 approved (2026-10-28). Phase 1 (v0.1) and Phase 2 (v0.2) approved and ar
 `…-phase-2-overview-and-budget`). Phase 3 (v0.3) approved and archived (2026-10-29,
 `…/2026-10-29-phase-3-snapshots-and-queue`). Phase 4 (v0.4) approved and archived (2026-10-29,
 `…/2026-10-29-phase-4-idle-and-wake`); its spike dropped Sablier (see its design.md). Phase 5
-(v0.5, `phase-5-onboarding`) implemented, waiting for approval. siding today: `setup [--port]
+(v0.5) approved and archived (2026-10-29, `…/2026-10-29-phase-5-onboarding`); its release
+`v0.5.0` is tagged from `main` once phases 3 to 5 are merged. siding today: `setup [--port]
 [--budget] [--builds] [--idle]`, `teardown [--snapshots]`, `up [--wait] [--force] [--seed]`,
 `status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`, `snapshot save|ls|rm`, `gc`,
 `lint`, `ui`, `skill [--install] [--dir]`; routing by host and path through `siding-proxy`; a
