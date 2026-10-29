@@ -15,6 +15,8 @@ Roadmap v0.4:
 
 - Idle stop and wake on request (a standard building block such as Sablier).
 - Stopping idle stacks when the budget is under pressure.
+- Agent skill: `siding status --json` gives the stack's `url` without restarting it, and the
+  agent never gives `localhost:<port>` from the compose file, because siding publishes no ports.
 
 ## Capabilities
 
