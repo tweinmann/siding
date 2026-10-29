@@ -24,7 +24,8 @@ today: `setup [--port] [--budget] [--builds] [--idle]`, `teardown [--snapshots]`
 `snapshot save|ls|rm`, `gc`, `lint`, `ui`, `skill`; routing by host and path through
 `siding-proxy`; a memory budget with a start queue and learned peaks, where idle stacks make
 room (the verdict `Stopped`); build slots; `just smoke-stacks`, `just build-darwin`. Next:
-Phase 5 (`phase-5-remote-host`, v0.5), starting with `/opsx:propose`.
+Phase 5 (`phase-5-onboarding`, v0.5), starting with `/opsx:propose`; then Phase 6
+(`phase-6-remote-host`, v0.6).
 
 ## Working agreements
 

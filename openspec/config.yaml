@@ -103,7 +103,7 @@ context: |
     mounting the host's Docker socket gives code in the container root on the host, the
     opposite of why agents run in devcontainers.
 
-  ## Roadmap (draft changes phase-1 to phase-5)
+  ## Roadmap (draft changes phase-1 to phase-6)
   - v0.1 (phase-1): `setup`, `up`, `ps`, `status --wait --json` with log tail, `logs`, `open`,
     `down`, hostname and path routing, Claude Code skill.
   - v0.2 (phase-2): web overview at `siding.localhost` (`siding ui`), `gc` (git-aware), `lint`,
@@ -111,7 +111,9 @@ context: |
   - v0.3 (phase-3): snapshots and `--seed`, queue for capacity, parallel build limit, learned
     peaks.
   - v0.4 (phase-4): stopping idle stacks under memory pressure, the verdict `Stopped`.
-  - v0.5 (phase-5): remote Docker host (Docker context), local forwarder for `*.localhost`,
+  - v0.5 (phase-5): onboarding: releases, `siding skill --install` and the permission
+    snippet, `EnvFileMissing`, the lint rule `LocalhostURL`, a default snapshot.
+  - v0.6 (phase-6): remote Docker host (Docker context), local forwarder for `*.localhost`,
     `HOST` column in `ps`.
   - Later: idle stop after a time and wake on request (Sablier ignores `depends_on` on wake,
     see the phase 4 spike), HTTP errors from the proxy in the verdict, a shared server with a database per
