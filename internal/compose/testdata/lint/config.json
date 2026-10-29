@@ -97,6 +97,7 @@
     },
     "worker": {
       "scale": 3,
+      "environment": {"API_URL": "http://localhost:3000/v1", "DATABASE_URL": "postgres://app:not-a-real-token@db:5432/app"},
       "command": null,
       "entrypoint": null,
       "image": "busybox:1.37.0",

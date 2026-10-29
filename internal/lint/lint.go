@@ -5,7 +5,10 @@ package lint
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -33,6 +36,8 @@ const (
 	NoHealthcheck    = "NoHealthcheck"
 	PublishedPort    = "PublishedPort"
 	NoRoot           = "NoRoot"
+	MissingEnvFile   = "MissingEnvFile"
+	LocalhostURL     = "LocalhostURL"
 )
 
 // Finding is one problem.
@@ -44,6 +49,9 @@ type Finding struct {
 	Message string
 	Hint    string
 }
+
+// localhostURL is a loopback host with a port in an environment value.
+var localhostURL = regexp.MustCompile(`(?i)(?:^|[^a-z0-9.-])(localhost|127\.0\.0\.1|\[::1\]):(\d+)`)
 
 // Check lints p, the configuration of project, whose worktree is the directory every relative
 // bind mount lives in.
@@ -74,6 +82,15 @@ func Check(p *compose.Project, project, worktree string) []Finding {
 			if !within(src, worktree) {
 				add(HostPath, Warning, subject, "mount a path inside the worktree, or a named volume",
 					"%s mounts %s from the host, and every branch's stack writes into the same directory", name, src)
+			}
+		}
+		for _, key := range slices.Sorted(maps.Keys(s.Environment)) {
+			// Only service, variable and host:port reach the finding, never the rest of the
+			// value: it may hold a password.
+			if m := localhostURL.FindStringSubmatch(s.Environment[key]); m != nil {
+				add(LocalhostURL, Warning, subject,
+					fmt.Sprintf("between services use the service's name, e.g. http://<service>:%s; in the browser, a path on the stack's address", m[2]),
+					"%s sets %s to %s:%s, which behind the proxy reaches %s's own container, not another service or your machine", name, key, m[1], m[2], name)
 			}
 		}
 		if s.NetworkMode != "" {

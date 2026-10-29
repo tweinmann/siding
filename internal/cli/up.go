@@ -58,7 +58,7 @@ With --wait, up ends like siding status --wait, with its verdict and exit code.`
 	cmd.Flags().StringVar(&f.repo, "repo", "", "repository name (default: the main worktree's directory name)")
 	cmd.Flags().StringVar(&f.agent, "agent", "", "agent name for the label dev.siding.agent (default: $SIDING_AGENT)")
 	cmd.Flags().BoolVar(&f.force, "force", false, "start the stack even if it does not fit into the memory budget")
-	cmd.Flags().StringVar(&f.seed, "seed", "", "on the stack's first up, start its volumes as copies of this snapshot")
+	cmd.Flags().StringVar(&f.seed, "seed", "", "on the stack's first up, start its volumes as copies of this snapshot (default: the snapshot \"default\" if there is one; \"none\" to start empty)")
 	w.register(cmd)
 	registerJSON(cmd, &asJSON)
 	return cmd
@@ -224,6 +224,11 @@ func (a *app) up(cmd *cobra.Command, f upFlags, w waitFlags, asJSON bool) error 
 		}
 	}
 
+	if path, err := compose.FindFile(a.opts.Dir, wt.Top, f.file); err == nil {
+		if err := a.checkEnvFiles(ctx, wt, path, project); err != nil {
+			return err
+		}
+	}
 	file, p, err := a.loadProject(ctx, wt.Top, f.file, project)
 	if err != nil {
 		return err
@@ -321,10 +326,10 @@ func printStackText(cmd *cobra.Command, doc stackDocument) error {
 }
 
 // seedPlan validates the seed labels and plans the seeding of a first up (spec seeding); a later
-// up seeds nothing. The snapshot is resolved here, before anything starts.
+// up seeds nothing. The snapshot is resolved here, before anything starts: the one --seed names,
+// else the repository's snapshot default if there is one; --seed none starts empty.
 func (a *app) seedPlan(ctx context.Context, project, repo string, p *compose.Project, seedName string, containers int, stderr io.Writer) (seed.Plan, snapshot.Snapshot, error) {
-	plan, err := seed.Make(p, seedName != "")
-	if err != nil {
+	if _, err := seed.Make(p, false); err != nil {
 		return seed.Plan{}, snapshot.Snapshot{}, err
 	}
 	vols, err := a.opts.Docker.Volumes(ctx, map[string]string{stack.LabelProject: project})
@@ -332,21 +337,35 @@ func (a *app) seedPlan(ctx context.Context, project, repo string, p *compose.Pro
 		return seed.Plan{}, snapshot.Snapshot{}, err
 	}
 	if !seed.FirstUp(containers, len(vols)) {
-		if seedName != "" {
+		if seedName != "" && seedName != seedNone {
 			warnf(stderr, "%s already has data, so --seed %s seeds nothing; siding down --volumes removes its data", project, seedName)
 		}
 		return seed.Plan{}, snapshot.Snapshot{}, nil
 	}
-	if seedName == "" {
-		return plan, snapshot.Snapshot{}, nil
+	if seedName == seedNone {
+		plan, err := seed.Make(p, false)
+		return plan, snapshot.Snapshot{}, err
 	}
 	all, err := a.snapshots(ctx, false)
 	if err != nil {
 		return seed.Plan{}, snapshot.Snapshot{}, err
 	}
-	snap, err := snapshot.Find(all, repo, seedName)
+	var snap snapshot.Snapshot
+	if seedName == "" {
+		if snap, err = snapshot.Find(all, repo, snapshot.DefaultName); err != nil {
+			plan, err := seed.Make(p, false) // no default: start empty, as before
+			return plan, snapshot.Snapshot{}, err
+		}
+		_, _ = fmt.Fprintf(stderr, "The repository's snapshot %s seeds this first up; --seed none starts empty\n", snapshot.DefaultName)
+	} else if snap, err = snapshot.Find(all, repo, seedName); err != nil {
+		return seed.Plan{}, snapshot.Snapshot{}, err
+	}
+	plan, err := seed.Make(p, true)
 	return plan, snap, err
 }
+
+// seedNone is the --seed that starts a first up empty, even with a snapshot default.
+const seedNone = "none"
 
 // seedVolumes creates the planned volumes as copies of the snapshot, with the labels Compose
 // sets itself, so Compose adopts them (design D3). Volumes the snapshot lacks start empty.

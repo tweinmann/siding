@@ -208,3 +208,26 @@ func TestParseConfigBuild(t *testing.T) {
 		t.Errorf("app build %v, db build %v; want true, false", p.Services["app"].Build, p.Services["db"].Build)
 	}
 }
+
+func TestEnvFiles(t *testing.T) {
+	t.Parallel()
+	// What docker compose config --no-env-resolution --format json printed for two services,
+	// one env file shared, one optional.
+	data := []byte(`{"name": "shop-main", "services": {
+	  "web": {"env_file": [{"path": "/src/shop/web.env"}, {"path": "/src/shop/common.env", "required": false}]},
+	  "api": {"env_file": [{"path": "/src/shop/common.env"}]},
+	  "db": {}
+	}}`)
+	got, err := EnvFiles(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// api comes first; common.env is required because api needs it.
+	want := []EnvFile{{Path: "/src/shop/common.env", Required: true}, {Path: "/src/shop/web.env", Required: true}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+	if _, err := EnvFiles([]byte("not json")); err == nil {
+		t.Error("broken output must fail")
+	}
+}

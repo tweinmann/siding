@@ -11,7 +11,7 @@ keeps the same names and the same commands.
 
 ## What Changes
 
-Roadmap v0.5:
+Roadmap v0.6:
 
 - Stacks on a remote Docker host, chosen through a Docker context.
 - A local forwarder so that `*.localhost` reaches stacks on the remote host.

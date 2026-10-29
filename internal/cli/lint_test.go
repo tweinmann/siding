@@ -35,7 +35,7 @@ func TestLint(t *testing.T) {
 		for _, want := range []string{
 			"error   ContainerName, service db: db sets container_name \"shop-db\", so a second stack of this file cannot start\n        hint: remove container_name",
 			"info    NoRoot, stack:",
-			"/src/shop/compose.yaml: 3 errors, 6 warnings, 3 info\n",
+			"/src/shop/compose.yaml: 3 errors, 7 warnings, 3 info\n",
 		} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("the text lacks %q:\n%s", want, stdout)

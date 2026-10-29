@@ -3,23 +3,167 @@
 siding gives every git worktree its own Docker Compose stack, at its own `*.localhost` address,
 and tells you and your coding agents whether it actually runs and what it costs.
 
-> **Pre-alpha (v0.4).** Stacks per worktree, routing through one local proxy, the verdict of
+> **Pre-alpha (v0.5).** Stacks per worktree, routing through one local proxy, the verdict of
 > `siding status`, the overview `siding ui`, a memory budget with a queue, learned peaks and
-> idle stacks that make room, snapshots and seeding, a build limit, `gc` and `lint` work; expect
-> rough edges and changes before v1. There are no releases
-> yet: build it from source (see below). The plan is in [openspec/changes/](openspec/changes)
+> idle stacks that make room, snapshots and seeding, a build limit, `gc`, `lint` and a skill for
+> coding agents work; expect
+> rough edges and changes before v1. The plan is in [openspec/changes/](openspec/changes)
 > (one change per phase), what siding does today in [openspec/specs/](openspec/specs).
 
-## Using siding
+## Why siding
 
-siding needs Docker with Compose 2.24 or later, and git. Your compose file stays as it is.
+Coding agents work best in parallel: one per task, each in its own git worktree. Writing the
+code is then the easy part. What stays open is whether it runs: an agent reports "done" after
+the unit tests pass, but the app, with its database, its API and its frontend, never started.
+And if you start it, the worktrees get in each other's way:
 
-### Once per machine: the proxy
+- **They collide.** Two copies of the same compose file fight over port 3000, a fixed
+  `container_name` or a shared volume. The agent edits the compose file to get around it, or
+  stops the other branch's stack.
+- **"Started" is not "runs".** `docker compose up -d` returns as soon as the containers exist.
+  Whether the API crashed two seconds later, or listens on the wrong interface, nobody checks.
+- **Nobody knows which is which.** `localhost:3000`, `localhost:3001`, `localhost:3002`: which
+  tab is which branch, and why does the login of one break the other's session?
+- **The laptop fills up.** Five stacks at a gigabyte or two each, and the machine swaps.
+
+siding fixes this for apps that already run with Docker Compose, without changing them:
+
+- **One stack per worktree.** Your unchanged compose file runs as its own Compose project per
+  branch, with its own containers, volumes and network. siding adds one override that removes
+  published ports, so nothing collides.
+- **One address per branch.** One local proxy routes `http://shop.feature-login.localhost` to
+  that branch's stack: a stable address, its own origin and its own cookies.
+- **A verdict, not a guess.** `siding up --wait` ends with `Ready` only when every healthcheck is
+  healthy and every routed service answers through the proxy. Otherwise it names the service,
+  the reason, a hint and its last log lines, as JSON an agent acts on. A skill teaches your
+  agent to do exactly that before it says "done".
+- **One view of everything.** `siding ps` and `siding ui` show every stack on the machine, its
+  address and what it costs. A memory budget queues or makes room instead of letting the
+  machine swap, and `siding gc` removes what is merged.
+
+What it looks like for an agent:
+
+```console
+$ siding up --wait --json        # abridged
+{ "kind": "Status", "verdict": "Failed",
+  "failure": { "service": "api", "reason": "Exited", "hint": "exited with code 1; see its last log lines",
+               "logs": ["connecting to postgres://app:***@db/app", "cannot connect to db"] } }
+```
+
+The agent fixes `api`, runs it again, and reports `Ready` with
+`http://shop.feature-login.localhost` for you to try.
+
+siding is not an agent manager, not a sandbox for the agent, not Kubernetes and not production.
+It runs your stacks locally, and uninstalling it leaves plain Compose projects that keep
+running.
+
+## Get started
+
+siding needs Docker with Compose 2.24 or later, and git. Your compose file stays as it is. The
+steps below follow the order you walk them in; each links to the details in the
+[reference](#reference).
+
+### 1. Install siding
+
+Download the binary for your platform and `SHA256SUMS` from the
+[latest release](https://github.com/tweinmann/siding/releases/latest), then:
+
+```sh
+shasum -a 256 -c SHA256SUMS --ignore-missing      # sha256sum on Linux
+chmod +x siding-darwin-arm64                       # siding-<os>-<arch> of your platform
+sudo mv siding-darwin-arm64 /usr/local/bin/siding
+xattr -d com.apple.quarantine /usr/local/bin/siding  # macOS: the binary is not signed yet
+siding version
+```
+
+The binaries are static and need nothing but Docker and git. To build siding yourself, see
+[Developing siding](#developing-siding).
+
+### 2. Once per machine: the proxy
+
+```sh
+siding setup                 # Traefik as siding-proxy on 127.0.0.1:80
+```
+
+Every stack is then reached at `http://<repo>.<branch>.localhost`. Port taken, budget, build
+slots: see [The proxy](#the-proxy) and [Memory budget and idle stacks](#memory-budget-and-idle-stacks).
+
+### 3. Once per repository: prepare it
+
+```sh
+cd shop
+siding lint                  # what breaks parallel stacks, before the first up
+siding up --wait             # the stack of this worktree, and its verdict
+```
+
+Fix what [`lint`](#lint-rules) reports as errors in your compose file; siding never edits it.
+Take its `LocalhostURL` warnings seriously: behind the proxy, `localhost` inside a container is
+that container, so services call each other by name (`http://api:3000`), and the browser uses
+paths on the stack's address (`/api`) instead of a fixed `http://localhost:3000`.
+Label the service that is the app's root `dev.siding.route: "/"`, and give services
+healthchecks, so that Ready means ready ([Routing](#routing)).
+
+Teach your coding agent to use siding ([For coding agents](#for-coding-agents)):
+
+```sh
+siding skill --install       # .claude/skills/siding/SKILL.md; --dir for another harness
+git add .claude/skills/siding && git commit -m "Add the siding skill"
+```
+
+Commit it: a new worktree only has committed files. `--install` also prints a section for
+`AGENTS.md` and the permissions that let the agent run `siding up`, `status`, `logs` and `ps`
+without asking; add them where your harness reads them.
+
+To start every new worktree with data instead of empty, fill a stack with test data and save
+it as the snapshot `default` ([Snapshots and seeding](#snapshots-and-seeding)):
+
+```sh
+siding snapshot save default # every new stack of this repository starts from it
+```
+
+### 4. Per task: a worktree and an agent
+
+```sh
+git worktree add ../shop-feature-x -b feature/x
+cp .env ../shop-feature-x/   # git does not copy untracked files such as .env
+cd ../shop-feature-x
+```
+
+If you forget, `siding up` refuses with `EnvFileMissing` and the `cp` command to run, instead
+of starting the stack with blank values ([Env files](#env-files)).
+
+Start your agent there. After a change, it runs `siding up --wait --json`, fixes what the
+[verdict](#verdict-and-exit-codes) names, and reports the stack's address, e.g.
+`http://shop.feature-x.localhost`, for you to try. Each worktree's stack has its own
+containers, volumes, address and cookies.
+
+### 5. Keep an eye on it
+
+```sh
+siding ps                    # every stack on this machine: state, address, memory
+siding ui                    # the same as a page at http://siding.localhost
+siding open                  # this worktree's stack in the browser
+```
+
+When a new stack does not fit into the memory budget, stacks nobody requested for a while make
+room ([Memory budget and idle stacks](#memory-budget-and-idle-stacks)).
+
+### 6. After the merge
+
+```sh
+siding gc                    # remove the stacks of merged branches; --dry-run first
+git worktree remove ../shop-feature-x
+```
+
+See [gc](#gc) for what counts as merged and what stays.
+
+## Reference
+
+### The proxy
 
 ```sh
 siding setup                 # Traefik as siding-proxy on 127.0.0.1:80
 siding setup --port 8080     # if port 80 is taken, or inside siding's devcontainer
-siding teardown              # remove the proxy again; stacks keep running, --dry-run lists it
 ```
 
 Every stack is reached through this one proxy at `http://<repo>.<branch>.localhost`. Browsers
@@ -28,7 +172,7 @@ macOS does not: there, use `curl -H "Host: shop.feature-login.localhost" http://
 add the host to `/etc/hosts`, as for other tools. Running `siding setup` again changes nothing
 unless the port differs.
 
-### In a worktree: start the stack
+### Starting a stack
 
 ```sh
 siding up                    # e.g. shop on feature/login: http://shop.feature-login.localhost/
@@ -40,6 +184,18 @@ siding up --wait             # and wait for the verdict, like siding status --wa
 `.siding/override.yml`. That file resets every published port, so branches never fight over
 ports, and puts siding's labels and routes on the services. `.siding/` ignores itself in git.
 
+### Env files
+
+`git worktree add` copies only what git tracks, so a new worktree has no `.env` and none of the
+untracked files the compose file names in `env_file`. Compose would start the stack anyway,
+with blank values. So in a linked worktree, `siding up` refuses with `EnvFileMissing` when it
+lacks `.env` or a required `env_file` that the main worktree has and git does not track; the
+hint gives the `cp` command, and `siding lint` warns `MissingEnvFile` for the same files.
+siding never copies them itself: they hold secrets, and which values a branch needs is your
+call. If a worktree needs none, an empty file will do (`touch .env`).
+
+### Routing
+
 - A service labelled `dev.siding.route: "/"` is the stack's root, `dev.siding.route: "/api"`
   answers under that path (the path is passed on unchanged), `dev.siding.route: "false"`
   hides a service.
@@ -49,7 +205,7 @@ ports, and puts siding's labels and routes on the services. `.siding/` ignores i
 - Published ports are gone, also a database's. Reach it with
   `docker compose -p <repo>-<branch> exec db psql …`.
 
-### Does it run?
+### Verdict and exit codes
 
 ```sh
 siding status                # Ready, Starting, Failed, TimedOut or Stopped, per service
@@ -63,7 +219,7 @@ lines. `Stopped` means no container runs and none failed; `siding up` starts it 
 codes: 0 Ready, 1 Failed, 2 TimedOut, Stopped or still starting. Every command prints one
 JSON document with `--json`, for scripts and agents.
 
-### Before the first up: lint
+### Lint rules
 
 ```sh
 siding lint                  # exits 1 when it finds an error; --json for a LintReport
@@ -80,10 +236,12 @@ siding lint                  # exits 1 when it finds an error; --json for a Lint
 | `HostPath` | warning | a bind mount of a path outside the worktree, shared by every stack |
 | `NetworkMode` | warning | `network_mode`: siding cannot route the service |
 | `NoHealthcheck` | warning | no healthcheck and no route: Ready only means it started |
+| `LocalhostURL` | warning | an environment value with `localhost:<port>` or `127.0.0.1:<port>`: behind the proxy it reaches the service's own container; the finding names the variable, never its value |
+| `MissingEnvFile` | warning | in a new worktree, an untracked env file of the main worktree that is missing ([Env files](#env-files)) |
 | `PublishedPort` | info | published ports, which siding resets |
 | `NoRoot` | info | HTTP services, but none at `/` |
 
-### Snapshots
+### Snapshots and seeding
 
 ```sh
 siding snapshot save base    # copy this stack's named volumes into the snapshot "base"
@@ -96,11 +254,15 @@ per repository. While it copies, `save` stops the services that use those volume
 database is copied in a consistent state, and starts them again. Snapshots outlive stacks:
 `down --volumes` and `gc` never remove them; `siding teardown --snapshots` does.
 
-### Seeding a new stack
-
 ```sh
 siding up --seed base        # on the stack's first up: its volumes start as copies of "base"
+siding up --seed none        # start empty, even with a snapshot default
 ```
+
+The snapshot named `default` needs no flag: a stack's first `up` without `--seed` seeds from
+it and says so on stderr, so an agent's first `up` in a new worktree gets the data without
+knowing about snapshots. Save a newer state with `siding snapshot save default --force`; without
+a snapshot `default`, a first `up` starts empty. `none` cannot be a snapshot's name.
 
 A new worktree's stack can start with data instead of empty. On its first `up` (the project
 has no containers and no volumes yet), `--seed <snapshot>` creates its volumes as copies of the
@@ -118,13 +280,13 @@ services:
     image: redis:7
     labels:
       dev.siding.seed: none                         # never seeded, starts empty
-  # without the label, or with dev.siding.seed: volume, the volumes come from --seed
+  # without the label, or with dev.siding.seed: volume, the volumes come from --seed or default
 ```
 
 The seed command runs with `docker compose exec` as soon as the service is ready. If it fails,
 the verdict is `Failed` with the reason `SeedFailed` and the command's output.
 
-### Memory budget
+### Memory budget and idle stacks
 
 ```sh
 siding setup --budget 12g        # memory for all stacks together; "default" is 75 % of Docker's
@@ -196,7 +358,7 @@ siding down --volumes        # also the data; refused while the branch is unmerg
                              # worktree dirty, unless --force; --dry-run lists it first
 ```
 
-### After a merge: gc
+### gc
 
 ```sh
 siding gc --dry-run          # what can go, and what stays and why
@@ -227,12 +389,32 @@ run in devcontainers, and bind mounts break unless the paths match inside and ou
 
 ### For coding agents
 
-`siding skill` prints a Claude Code skill that tells an agent to run `siding up --wait --json`
-after a change and to act on the verdict. siding writes no file itself; install it with
+`siding skill` prints a skill, in the Agent Skills format, that tells an agent to run
+`siding up --wait --json` after a change, to act on the verdict, and to report the stack's
+address. It names no harness, so the same file works wherever skills are read.
 
 ```sh
-mkdir -p .claude/skills/siding && siding skill > .claude/skills/siding/SKILL.md
+siding skill --install                          # .claude/skills/siding/SKILL.md at the worktree's top
+siding skill --install --dir ~/.claude/skills   # for every repository, nothing to commit
+siding skill --install --dir <skills dir>       # the skills directory of another harness
+siding skill > SKILL.md                         # print it, write nothing
 ```
+
+`--install` replaces an older copy, so run it again after upgrading siding. It then prints two
+snippets and writes neither: a short section for `AGENTS.md`, which many harnesses read, and
+the permissions for siding's reading commands, as an entry for Claude Code's
+`.claude/settings.json` and as a plain list for other harnesses. Only those four commands:
+stopping and removing stacks and their data stays your decision.
+
+### Removing siding
+
+```sh
+siding teardown              # remove the proxy; stacks keep running, --dry-run lists it
+siding teardown --snapshots  # and every snapshot of this machine
+```
+
+Without siding, your stacks are plain Compose projects that keep running; `docker compose -p
+<repo>-<branch> down` removes one. `~/.siding` is a cache you can delete.
 
 ## Developing siding
 
@@ -248,6 +430,7 @@ on your machine and siding's tests never touch your Docker containers.
    | `just test` | formatting, vet, unit tests with `-race`, golangci-lint, OpenSpec validation (as in CI) |
    | `just golden` | rewrite golden files after an intended output change |
    | `just build` | build `bin/siding` |
+   | `just dist <version>` | the release binaries and `SHA256SUMS` in `dist/`, as CI builds them for a `v*` tag |
    | `just build-darwin` | build `bin/siding-darwin-arm64` and `-amd64`, to run siding on your Mac |
    | `just smoke-docker` | Compose, `ports: !reset []` and Traefik routing against the container's own daemon |
    | `just smoke-stacks` | siding's own commands end to end against the container's own daemon |

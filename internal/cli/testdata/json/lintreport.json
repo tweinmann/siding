@@ -60,6 +60,13 @@
       "hint": "add a healthcheck, so Ready means the service works, not only that it started"
     },
     {
+      "rule": "LocalhostURL",
+      "severity": "warning",
+      "subject": "service worker",
+      "message": "worker sets API_URL to localhost:3000, which behind the proxy reaches worker's own container, not another service or your machine",
+      "hint": "between services use the service's name, e.g. http://<service>:3000; in the browser, a path on the stack's address"
+    },
+    {
       "rule": "NoHealthcheck",
       "severity": "warning",
       "subject": "service worker",
