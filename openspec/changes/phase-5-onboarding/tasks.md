@@ -42,7 +42,8 @@
 ## 7. End-to-end and integration
 
 - [x] 7.1 Extend `internal/e2e`: a linked worktree without `.env` refused with `EnvFileMissing`, then Ready after the hint's `cp`; a snapshot `default` seeding a new worktree's first `up`, and `--seed none` starting empty; `siding skill --install` writing into a temporary repository; verify with `just smoke-stacks` and that no `siding-test-*` object is left
-- [ ] 7.2 Walk the user journey on the Mac with a binary from `just dist`, following only the README's "Get started" (install, `setup`, `lint`, `skill --install`, a new worktree without `.env`, the snapshot `default`), and note every place where the README left a gap; record the result in this task
+- [x] 7.2 Walk the user journey on the Mac with a binary from `just dist`, following only the README's "Get started" (install, `setup`, `lint`, `skill --install`, a new worktree without `.env`, the snapshot `default`), and note every place where the README left a gap; record the result in this task
+  - macOS with Docker Desktop (2026-10-29): passed without problems, following only the README's "Get started" with the `v0.5.0-rc1` binaries of `bin/mac-journey` and its demo project: install with `shasum -a 256 -c --ignore-missing`, `xattr` and `siding version`; `setup`; `lint` with `LocalhostURL` and `NoRoot`; `skill --install`; `snapshot save default`; a new worktree refused with `EnvFileMissing`, then seeded from `default`; `ps`, `ui`, `open`; `gc --dry-run`. The maintainer found no gap in the README.
 - [x] 7.3 Update the status in CLAUDE.md, the README and `openspec/config.yaml` to v0.5, with `EnvFileMissing` in the conventions where error codes are listed; verify `just test` passes
 
 ## Workflow follow-up
