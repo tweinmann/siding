@@ -23,6 +23,8 @@ test:
     go test -race ./...
     golangci-lint run ./...
     openspec validate --all --strict --no-interactive
+    # install.sh against a release served on a loopback port; no Docker, no network
+    hack/test-install.sh
 
 # Rewrite golden files from the current code after an intended change
 # (every package with golden files; a package without the -update flag would fail on it)
