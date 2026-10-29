@@ -200,8 +200,8 @@ func TestMainWorktree(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		real, _ := filepath.EvalSymlinks(main)
-		if w.MainTop() != real || w.Linked() != tt.linked {
+		mainTop, _ := filepath.EvalSymlinks(main)
+		if w.MainTop() != mainTop || w.Linked() != tt.linked {
 			t.Errorf("%s: main top %q, linked %v", tt.dir, w.MainTop(), w.Linked())
 		}
 	}
@@ -239,8 +239,8 @@ func TestTop(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	real, _ := filepath.EvalSymlinks(dir)
-	if top, err := (Client{}).Top(ctx, sub); err != nil || top != real {
+	want, _ := filepath.EvalSymlinks(dir)
+	if top, err := (Client{}).Top(ctx, sub); err != nil || top != want {
 		t.Errorf("detached, in a subdirectory: %q, %v", top, err)
 	}
 	if _, err := (Client{}).Top(ctx, t.TempDir()); code(err) != fail.NotAGitRepository {

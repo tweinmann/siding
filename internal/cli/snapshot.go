@@ -45,6 +45,9 @@ those volumes are stopped while copying, so databases are consistent, and starte
 				return printJSON(cmd.OutOrStdout(), doc)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Saved the snapshot %s of %s: %s\n", doc.Name, doc.Repo, strings.Join(snapshotVolumeKeys(doc), ", "))
+			if err == nil && doc.Name == snapshot.DefaultName {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "New stacks of %s start from it on their first up, unless siding up --seed none\n", doc.Repo)
+			}
 			return err
 		},
 	}

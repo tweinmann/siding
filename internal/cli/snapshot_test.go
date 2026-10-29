@@ -24,6 +24,18 @@ func composeCalls(e *env) []string {
 func TestSnapshotSave(t *testing.T) {
 	t.Parallel()
 
+	t.Run("the names none and default", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t)
+		e.stackUp(e.id(), "db", "web")
+		if code, stdout, _ := e.run("snapshot", "save", "none", "--json"); code != exitFailed || !strings.Contains(stdout, `"code": "InvalidArguments"`) || len(e.docker.calls) != 0 {
+			t.Errorf("none: exit %d, docker %q\n%s", code, e.docker.calls, stdout)
+		}
+		if code, stdout, _ := e.run("snapshot", "save", "default"); code != exitOK || !strings.Contains(stdout, "New stacks of shop start from it on their first up") {
+			t.Errorf("default: exit %d\n%s", code, stdout)
+		}
+	})
+
 	t.Run("save", func(t *testing.T) {
 		t.Parallel()
 		e := newEnv(t)

@@ -31,19 +31,19 @@
 ## 5. localhost in the environment
 
 - [x] 5.1 Implement `LocalhostURL` in `internal/lint` (D5); verify with table tests for the spec's scenarios (an API URL, a password in the value that never reaches the finding, no port, `[::1]`) and the updated `lintreport.json` golden
-- [ ] 5.2 Add `LocalhostURL` and `MissingEnvFile` to the reference's lint table and explain `localhost` behind the proxy in the journey's step 3; verify the table matches the rule names in the code
+- [x] 5.2 Add `LocalhostURL` and `MissingEnvFile` to the reference's lint table and explain `localhost` behind the proxy in the journey's step 3; verify the table matches the rule names in the code
 
 ## 6. The snapshot default
 
-- [ ] 6.1 Seed a first `up` without `--seed` from the snapshot `default` and plan none for `--seed none` (D6), with the stderr line; verify with fake-based tests per scenario of `seeding` "The default snapshot" and "Seed per service"
-- [ ] 6.2 Refuse `snapshot save none` and say what `default` means on `snapshot save default`; verify with fake-based tests
-- [ ] 6.3 Document the snapshot `default` in the journey's step 3 and the reference's snapshots and seeding; verify the shown commands run as written in the devcontainer
+- [x] 6.1 Seed a first `up` without `--seed` from the snapshot `default` and plan none for `--seed none` (D6), with the stderr line; verify with fake-based tests per scenario of `seeding` "The default snapshot" and "Seed per service"
+- [x] 6.2 Refuse `snapshot save none` and say what `default` means on `snapshot save default`; verify with fake-based tests
+- [x] 6.3 Document the snapshot `default` in the journey's step 3 and the reference's snapshots and seeding; verify the shown commands run as written in the devcontainer
 
 ## 7. End-to-end and integration
 
-- [ ] 7.1 Extend `internal/e2e`: a linked worktree without `.env` refused with `EnvFileMissing`, then Ready after the hint's `cp`; a snapshot `default` seeding a new worktree's first `up`, and `--seed none` starting empty; `siding skill --install` writing into a temporary repository; verify with `just smoke-stacks` and that no `siding-test-*` object is left
+- [x] 7.1 Extend `internal/e2e`: a linked worktree without `.env` refused with `EnvFileMissing`, then Ready after the hint's `cp`; a snapshot `default` seeding a new worktree's first `up`, and `--seed none` starting empty; `siding skill --install` writing into a temporary repository; verify with `just smoke-stacks` and that no `siding-test-*` object is left
 - [ ] 7.2 Walk the user journey on the Mac with a binary from `just dist`, following only the README's "Get started" (install, `setup`, `lint`, `skill --install`, a new worktree without `.env`, the snapshot `default`), and note every place where the README left a gap; record the result in this task
-- [ ] 7.3 Update the status in CLAUDE.md, the README and `openspec/config.yaml` to v0.5, with `EnvFileMissing` in the conventions where error codes are listed; verify `just test` passes
+- [x] 7.3 Update the status in CLAUDE.md, the README and `openspec/config.yaml` to v0.5, with `EnvFileMissing` in the conventions where error codes are listed; verify `just test` passes
 
 ## Workflow follow-up
 

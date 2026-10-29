@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -46,7 +47,7 @@ file. It exits 1 when there is an error.`,
 			if err != nil {
 				return err
 			}
-			findings := append(envFindings, lint.Check(p, project, top)...)
+			findings := slices.Concat(envFindings, lint.Check(p, project, top))
 			doc := lintDocument{header: newHeader(kindLintReport), File: path}
 			for _, f := range findings {
 				doc.Findings = append(doc.Findings, lintFinding(f))

@@ -18,14 +18,15 @@ Phase 0 approved (2026-10-28). Phase 1 (v0.1) and Phase 2 (v0.2) approved and ar
 (2026-10-28, `openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing` and
 `…-phase-2-overview-and-budget`). Phase 3 (v0.3) approved and archived (2026-10-29,
 `…/2026-10-29-phase-3-snapshots-and-queue`). Phase 4 (v0.4) approved and archived (2026-10-29,
-`…/2026-10-29-phase-4-idle-and-wake`); its spike dropped Sablier (see its design.md). siding
-today: `setup [--port] [--budget] [--builds] [--idle]`, `teardown [--snapshots]`, `up [--wait]
-[--force] [--seed]`, `status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`,
-`snapshot save|ls|rm`, `gc`, `lint`, `ui`, `skill`; routing by host and path through
-`siding-proxy`; a memory budget with a start queue and learned peaks, where idle stacks make
-room (the verdict `Stopped`); build slots; `just smoke-stacks`, `just build-darwin`. Next:
-Phase 5 (`phase-5-onboarding`, v0.5), starting with `/opsx:propose`; then Phase 6
-(`phase-6-remote-host`, v0.6).
+`…/2026-10-29-phase-4-idle-and-wake`); its spike dropped Sablier (see its design.md). Phase 5
+(v0.5, `phase-5-onboarding`) implemented, waiting for approval. siding today: `setup [--port]
+[--budget] [--builds] [--idle]`, `teardown [--snapshots]`, `up [--wait] [--force] [--seed]`,
+`status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`, `snapshot save|ls|rm`, `gc`,
+`lint`, `ui`, `skill [--install] [--dir]`; routing by host and path through `siding-proxy`; a
+memory budget with a start queue and learned peaks, where idle stacks make room (the verdict
+`Stopped`); build slots; `EnvFileMissing` for env files of the main worktree; the snapshot
+`default`; `just smoke-stacks`, `just build-darwin`, `just dist` and releases on `v*` tags.
+Next: Phase 6 (`phase-6-remote-host`, v0.6), starting with `/opsx:propose`.
 
 ## Working agreements
 
@@ -93,6 +94,7 @@ requests and on `main`, all inside the devcontainer image.
 | `just test` | devcontainer | level-1 checks, as in CI: gofmt, vet, `go test -race`, golangci-lint, `openspec validate --all --strict` |
 | `just golden` | devcontainer | rewrite golden files after an intended change |
 | `just build` | devcontainer | build a static `bin/siding` (linux) |
+| `just dist <version>` | devcontainer | build the release binaries (macOS and Linux, arm64 and amd64) and `SHA256SUMS` into `dist/`; CI does it on `v*` tags and publishes a GitHub Release |
 | `just build-darwin` | devcontainer | build `bin/siding-darwin-arm64` and `-amd64`, to try siding on the Mac against Docker Desktop (product use, not development) |
 | `just smoke-docker` | devcontainer | inner daemon: compose project with two services and healthchecks, `ports: !reset []`, Traefik on `siding` routing `demo.main.localhost` at `/` and `/api` |
 | `just smoke-stacks` | devcontainer | inner daemon: siding's own commands end to end (`internal/e2e`, build tag `docker`): setup, `up --wait`, routing, a Failed verdict with log tail, `ps`, `down`, the guard of `down --volumes`; also checks golden overrides with `docker compose config` |
@@ -141,7 +143,8 @@ requests and on `main`, all inside the devcontainer image.
   (`volume|script|none`), `dev.siding.seed.command` (the seed command of `script`). Volume
   label `dev.siding.shared`. Snapshot volumes: `dev.siding.snapshot` (name),
   `dev.siding.snapshot-volume` (the stack's volume key), `dev.siding.snapshot-created`, plus
-  `dev.siding.repo` and `dev.siding.machine`. On `siding-proxy`: `dev.siding.budget` (the memory
+  `dev.siding.repo` and `dev.siding.machine`. The snapshot named `default` seeds a stack's
+  first `up` without `--seed`; `none` is not a snapshot name (`--seed none` starts empty). On `siding-proxy`: `dev.siding.budget` (the memory
   budget in bytes), `dev.siding.builds` (build slots), `dev.siding.idle` (the idle threshold in seconds, `0`
   for off) and `dev.siding.host-alias` (what `host.docker.internal` resolves to in the proxy).
 - Compose project `<repo>-<branch-slug>`, host `<repo>.<branch-slug>.localhost`, proxy

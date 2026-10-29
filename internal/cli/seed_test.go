@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tweinmann/siding/internal/docker"
 	"github.com/tweinmann/siding/internal/fail"
+	"github.com/tweinmann/siding/internal/snapshot"
 )
 
 // seedConfig is testConfig with seed labels on db (a seed command) and on a cache service
@@ -118,4 +120,60 @@ func TestSeedCommandFails(t *testing.T) {
 			t.Errorf("wait %v: exit %d\n%s", wait, code, stdout)
 		}
 	}
+}
+
+// withDefault adds the snapshot default of shop, holding data.
+func withDefault(e *env) {
+	e.docker.volumes = append(e.docker.volumes, docker.Volume{Name: snapshot.VolumeName("shop", "default", "data"),
+		Labels: snapshot.Labels("shop", "default", "data", e.id().Machine, e.clock.now)})
+}
+
+func TestDefaultSnapshot(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a new worktree starts with data", func(t *testing.T) {
+		t.Parallel()
+		e := seedEnv(t)
+		withDefault(e)
+		code, _, stderr := e.run("up")
+		if code != exitOK || !strings.Contains(stderr, "The repository's snapshot default seeds this first up; --seed none starts empty") ||
+			!strings.Contains(stderr, "Seeding shop-main from the snapshot default: data") {
+			t.Fatalf("exit %d, stderr %q", code, stderr)
+		}
+		if want := []string{"create shop-main_data", "copy siding-snap_shop_default_data shop-main_data"}; !slices.Equal(e.docker.calls, want) {
+			t.Errorf("docker %q, want %q", e.docker.calls, want)
+		}
+	})
+
+	t.Run("empty on purpose", func(t *testing.T) {
+		t.Parallel()
+		e := seedEnv(t)
+		withDefault(e)
+		code, _, stderr := e.run("up", "--seed", "none")
+		if code != exitOK || len(e.docker.calls) != 0 || strings.Contains(stderr, "snapshot default") {
+			t.Errorf("exit %d, docker %q, stderr %q", code, e.docker.calls, stderr)
+		}
+		// The seed command still runs on a first up: none only means no snapshot.
+		if calls := composeCalls(e); len(calls) != 2 || calls[1] != "shop-main exec -T db sh -c psql -f /seed.sql" {
+			t.Errorf("compose %q", calls)
+		}
+	})
+
+	t.Run("no default", func(t *testing.T) {
+		t.Parallel()
+		e := seedEnv(t) // base and big, no default
+		if code, _, stderr := e.run("up"); code != exitOK || len(e.docker.calls) != 0 || strings.Contains(stderr, "Seeding shop-main from") {
+			t.Errorf("exit %d, docker %q, stderr %q", code, e.docker.calls, stderr)
+		}
+	})
+
+	t.Run("not a first up", func(t *testing.T) {
+		t.Parallel()
+		e := seedEnv(t)
+		withDefault(e)
+		e.stackUp(e.id(), "web")
+		if code, _, stderr := e.run("up"); code != exitOK || len(e.docker.calls) != 0 || strings.Contains(stderr, "warning") {
+			t.Errorf("exit %d, docker %q, stderr %q", code, e.docker.calls, stderr)
+		}
+	})
 }

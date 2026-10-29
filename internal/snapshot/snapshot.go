@@ -33,8 +33,19 @@ func ValidName(name string) error {
 	if len(name) > 40 || !validName.MatchString(name) {
 		return fail.New(fail.InvalidArguments, "snapshot name %q: use lowercase letters, digits and dashes, at most 40 characters", name)
 	}
+	if name == ReservedName {
+		return fail.New(fail.InvalidArguments, "the snapshot name %q is reserved: --seed %s starts a stack empty", name, name).
+			WithHint("choose another name")
+	}
 	return nil
 }
+
+const (
+	// DefaultName is the snapshot a first up seeds from without --seed (spec seeding).
+	DefaultName = "default"
+	// ReservedName is not a snapshot name: --seed none means no snapshot.
+	ReservedName = "none"
+)
 
 // VolumeName is the volume holding one volume of a snapshot. The parts are separated by "_",
 // which neither slugs nor snapshot names contain, so two snapshots never share a volume.

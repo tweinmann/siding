@@ -3,9 +3,10 @@
 siding gives every git worktree its own Docker Compose stack, at its own `*.localhost` address,
 and tells you and your coding agents whether it actually runs and what it costs.
 
-> **Pre-alpha (v0.4).** Stacks per worktree, routing through one local proxy, the verdict of
+> **Pre-alpha (v0.5).** Stacks per worktree, routing through one local proxy, the verdict of
 > `siding status`, the overview `siding ui`, a memory budget with a queue, learned peaks and
-> idle stacks that make room, snapshots and seeding, a build limit, `gc` and `lint` work; expect
+> idle stacks that make room, snapshots and seeding, a build limit, `gc`, `lint` and a skill for
+> coding agents work; expect
 > rough edges and changes before v1. The plan is in [openspec/changes/](openspec/changes)
 > (one change per phase), what siding does today in [openspec/specs/](openspec/specs).
 
@@ -49,6 +50,9 @@ siding up --wait             # the stack of this worktree, and its verdict
 ```
 
 Fix what [`lint`](#lint-rules) reports as errors in your compose file; siding never edits it.
+Take its `LocalhostURL` warnings seriously: behind the proxy, `localhost` inside a container is
+that container, so services call each other by name (`http://api:3000`), and the browser uses
+paths on the stack's address (`/api`) instead of a fixed `http://localhost:3000`.
 Label the service that is the app's root `dev.siding.route: "/"`, and give services
 healthchecks, so that Ready means ready ([Routing](#routing)).
 
@@ -63,8 +67,12 @@ Commit it: a new worktree only has committed files. `--install` also prints a se
 `AGENTS.md` and the permissions that let the agent run `siding up`, `status`, `logs` and `ps`
 without asking; add them where your harness reads them.
 
-To start new worktrees with data instead of empty, save a snapshot of a stack with test data
-([Snapshots and seeding](#snapshots-and-seeding)).
+To start every new worktree with data instead of empty, fill a stack with test data and save
+it as the snapshot `default` ([Snapshots and seeding](#snapshots-and-seeding)):
+
+```sh
+siding snapshot save default # every new stack of this repository starts from it
+```
 
 ### 4. Per task: a worktree and an agent
 
@@ -181,6 +189,8 @@ siding lint                  # exits 1 when it finds an error; --json for a Lint
 | `HostPath` | warning | a bind mount of a path outside the worktree, shared by every stack |
 | `NetworkMode` | warning | `network_mode`: siding cannot route the service |
 | `NoHealthcheck` | warning | no healthcheck and no route: Ready only means it started |
+| `LocalhostURL` | warning | an environment value with `localhost:<port>` or `127.0.0.1:<port>`: behind the proxy it reaches the service's own container; the finding names the variable, never its value |
+| `MissingEnvFile` | warning | in a new worktree, an untracked env file of the main worktree that is missing ([Env files](#env-files)) |
 | `PublishedPort` | info | published ports, which siding resets |
 | `NoRoot` | info | HTTP services, but none at `/` |
 
@@ -199,7 +209,13 @@ database is copied in a consistent state, and starts them again. Snapshots outli
 
 ```sh
 siding up --seed base        # on the stack's first up: its volumes start as copies of "base"
+siding up --seed none        # start empty, even with a snapshot default
 ```
+
+The snapshot named `default` needs no flag: a stack's first `up` without `--seed` seeds from
+it and says so on stderr, so an agent's first `up` in a new worktree gets the data without
+knowing about snapshots. Save a newer state with `siding snapshot save default --force`; without
+a snapshot `default`, a first `up` starts empty. `none` cannot be a snapshot's name.
 
 A new worktree's stack can start with data instead of empty. On its first `up` (the project
 has no containers and no volumes yet), `--seed <snapshot>` creates its volumes as copies of the
@@ -217,7 +233,7 @@ services:
     image: redis:7
     labels:
       dev.siding.seed: none                         # never seeded, starts empty
-  # without the label, or with dev.siding.seed: volume, the volumes come from --seed
+  # without the label, or with dev.siding.seed: volume, the volumes come from --seed or default
 ```
 
 The seed command runs with `docker compose exec` as soon as the service is ready. If it fails,
@@ -367,6 +383,7 @@ on your machine and siding's tests never touch your Docker containers.
    | `just test` | formatting, vet, unit tests with `-race`, golangci-lint, OpenSpec validation (as in CI) |
    | `just golden` | rewrite golden files after an intended output change |
    | `just build` | build `bin/siding` |
+   | `just dist <version>` | the release binaries and `SHA256SUMS` in `dist/`, as CI builds them for a `v*` tag |
    | `just build-darwin` | build `bin/siding-darwin-arm64` and `-amd64`, to run siding on your Mac |
    | `just smoke-docker` | Compose, `ports: !reset []` and Traefik routing against the container's own daemon |
    | `just smoke-stacks` | siding's own commands end to end against the container's own daemon |
