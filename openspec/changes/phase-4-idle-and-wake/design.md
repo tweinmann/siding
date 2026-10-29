@@ -5,174 +5,146 @@
 v0.3 (archived as `2026-10-29-phase-3-snapshots-and-queue`) has a memory budget that refuses or
 queues a new stack, learned peaks, and no way to give back memory a stack holds but does not
 use. The pieces this phase builds on: the proxy's compose file rendered by
-`internal/proxy.ComposeFile` with settings as labels on `siding-proxy`; the override with one
-router per route and a middleware `<project>-<service>-id` that adds `X-Siding-Service`;
-`verdict.Evaluate` as a pure function; `checkBudget` and the queue loop in `up`; the losable
-cache `~/.siding`. Traefik is pinned at v3.7.16. Motivation and scope: see proposal.md;
-behaviour: see the delta specs. Constraints from CLAUDE.md: Docker is the database, no
-background service, standard building blocks over custom code, never lose work.
+`internal/proxy.ComposeFile` with settings as labels on `siding-proxy`, recreated by Compose
+when the file differs; router names `<project>-<service-slug>[-route]`; `verdict.Evaluate` as a
+pure function; `checkBudget` and the queue loop in `up`. Traefik is pinned at v3.7.16.
+Motivation and scope: see proposal.md; behaviour: see the delta specs. Constraints from
+CLAUDE.md: Docker is the database, no background service, standard building blocks over custom
+code, never lose work.
 
-Checked before this proposal (Sablier documentation and the plugin page on plugins.traefik.io):
-Traefik v3.6 added the container label `traefik.docker.allownonrunning=true`, which keeps the
-router and service of a stopped container, so a middleware still runs for its requests; the
-Sablier plugin's middleware takes `group`, `sablierUrl`, `sessionDuration` and a strategy
-(`dynamic` with a waiting page, or `blocking`); Sablier's Docker provider finds containers by
-`sablier.enable` and `sablier.group`, stops them with `docker stop` once the session expired,
-starts them on the next request, and treats a container as ready when it is healthy, or
-running if it has no healthcheck. Not documented, and checked first in task 1: the order in
-which Sablier starts the containers of a group, and whether a cached plugin loads offline.
+### Spike result (task 1.1, 2026-10-29)
+The first version of this change planned idle stop and wake on request with Sablier next to the
+proxy. The spike ran it in the inner daemon with Traefik v3.7.16, plugin v1.4.0, Sablier 1.10.1,
+a stack of `db` (healthcheck, ready after 3 s), `migrate` (exits 0) and `web` (routed,
+`depends_on: db: condition: service_healthy`), session 15 s, `blocking` strategy:
+
+- Worked: Traefik keeps the route of a stopped container with `allownonrunning`; a request
+  opens a session; Sablier stops the group after the session (exit codes 137 and 0); a request
+  wakes it; an access log with only `RouterName` and `StartUTC`; `USR1` reopens a renamed log.
+- **Start order not kept**: on wake, `db` and `web` started in the same second; `web` did not
+  wait for `db` to be healthy. Compose's `depends_on` is ignored.
+- **One-off services run again on every request**: Sablier starts `migrate` whenever it is
+  not running, i.e. on every request while the stack is awake, not once per wake.
+- **The first request after a wake is answered `302 Found`** (a redirect to the same URL) by
+  the plugin, not by the service; browsers follow it, `curl` without `-L` does not.
+- **The plugin needs the network on every start of the proxy**: Traefik 3.7 refuses the
+  plugin without `hash` ("plugin integrity check failed"; the catalog's validation answers
+  404), and with the archive cached and `hash` pinned it still calls `plugins.traefik.io` on
+  start and disables all plugins when it cannot reach it.
+- **Files written by the proxy into `~/.siding/proxy/` become root-owned**, so siding running
+  as the user cannot remove them without a helper container.
+
+The gate applied; the maintainer decided to drop Sablier (D1). This design is the revision.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Idle stop and wake built from Sablier and Traefik alone; siding only writes labels and the
-  proxy's compose file, and reads Docker and one log file.
-- A sleeping stack is visible as such (`Idle`, `idle`) and never woken by reading its state.
-- Under pressure, memory comes from stacks nobody used for a while, never from active ones.
-- Nothing changes for a user who does not run `setup --idle`.
+- Memory from stacks nobody used for a while, taken only when a new stack needs it, never from
+  active stacks, and without losing anything.
+- A stopped stack is visible as such (`Stopped`) and is started again the way Compose starts it.
+- Nothing new runs: no container, no daemon, no file of siding's; the record of requests is the
+  proxy's own container log.
 
 **Non-Goals:**
-- Idle stop per repository or per service, or excluding a service from it.
-- Pausing instead of stopping (Sablier's `pause` strategy keeps the memory).
-- Waking a stack for non-HTTP traffic (a database client through `docker compose exec`).
-- Budget checks on a wake by request: the proxy cannot refuse a request for lack of memory.
-- Showing the last request in `ps` or `ui`.
+- Stopping a stack after a time without requests while nothing else needs memory (it needs
+  something that runs all the time).
+- Waking a stack on a request (see the spike); moves to "later" in the roadmap.
+- Counting activity that does not pass the proxy (`docker compose exec`, a worker's jobs).
+- A page for requests to a stopped stack.
 
 ## Decisions
 
-### D1. Sablier next to the proxy (maintainer's decision)
-The project `siding` gains a service `sablier`, container `siding-sablier`, image
-`sablierapp/sablier:1.10.1` pinned in the binary (the devcontainer's `SIDING_SABLIER_IMAGE`), on
-the network `siding`, no published port, restarting unless stopped, with the Docker socket and
-the flags `--provider.name=docker`, `--provider.auto-stop-on-startup=false` (a recreated
-Sablier must not stop every stack at once) and `--storage.file=/data/sessions.json`, mounted
-from `~/.siding/proxy/<project>/sablier/`, so sessions survive a recreation. `siding-proxy`
-loads the plugin `github.com/sablierapp/sablier-traefik-plugin` at `v1.4.0` through
-`--experimental.plugins.sablier.*`, with Traefik's plugin storage mounted from
-`~/.siding/proxy/<project>/plugins/`. Traefik downloads the plugin when it starts; the cache
-keeps later starts from needing the network (checked in task 1). Alternatives, asked: no wake
-on request (`up` stops idle stacks under pressure, `siding up` wakes them; a request to a
-sleeping stack would get 404); siding's own wake service (custom code where a standard building
-block exists). Rejected: shipping the plugin's source as a local plugin (it would put Sablier's
-code into siding's binary and repository).
+### D1. No Sablier (maintainer's decision after the spike)
+Making room is done by `up` alone, with `docker compose`; a stopped stack is started again by
+`siding up`. Alternatives, asked: Sablier with restrictions (the user excludes one-off services
+with a label and adds `restart: on-failure` for `depends_on`, siding downloads the plugin and
+loads it as a local plugin to start offline: many footnotes, and still not Compose's order);
+postponing the phase until Sablier keeps the order. Rejected before: siding's own wake service
+(custom code, and a background service). The guardrails do not change.
 
-The guardrail "no background service" becomes: siding itself runs no daemon; the proxy project
-`siding` runs standard building blocks as containers (Traefik, Sablier). CLAUDE.md and
-`openspec/config.yaml` change with this phase.
+### D2. The idle threshold (maintainer's decision: on by default)
+Making room is on for every user, with a threshold of 5 minutes. `setup --idle <duration>`
+(a Go duration, at least 10 seconds; the end-to-end test uses 10s) keeps it in seconds as the
+label `dev.siding.idle` on `siding-proxy`; `--idle off` writes `dev.siding.idle=0`, which turns
+it off; `--idle default` removes the label; without the flag the label is kept, as with
+`--budget`. `Setup` gains `idle`: the duration (`5m0s`) or `off`. Alternative, asked: opt-in
+with `setup --idle` (v0.3 behaviour until turned on). Stopping loses nothing, so on by default
+costs a user at most a `siding up`.
 
-### D2. Opt-in with `setup --idle` (maintainer's decision)
-`--idle <duration>` is parsed as a Go duration, at least 10 seconds (the end-to-end test uses
-10s), and kept in seconds as the label `dev.siding.idle` on `siding-proxy`; `--idle off`
-removes it; without the flag the label is kept, as with `--budget`. Sablier runs while the
-label is set or any container carries `sablier.group` together with `dev.siding.repo` (Docker
-is the database: setup asks the daemon, not a file). With `--idle off` and such containers
-left, setup keeps Sablier and the plugin, so their routes keep working, and names the stacks
-with the hint `siding up`; the next setup after they were started again removes Sablier.
-Alternatives, asked: on by default with 30 minutes (would change v0.3 behaviour for every
-user); a label per repository in the compose file (the user's file would have to change).
+### D3. The record of requests: the proxy's access log on stdout
+Traefik writes a JSON access log to stdout next to its own log
+(`--accesslog=true --accesslog.format=json --accesslog.fields.defaultmode=drop
+--accesslog.fields.names.RouterName=keep --accesslog.fields.names.StartUTC=keep
+--accesslog.fields.headers.defaultmode=drop`), so a line holds the router, the time and
+Traefik's `level`, `msg` and `time`, and no URL, header or address (seen in the spike). The
+proxy's compose file sets `logging: {driver: json-file, options: {max-size: 10m, max-file:
+"3"}}`, so Docker bounds it at 30 MiB whatever the daemon's default driver is. Alternatives: a
+file under `~/.siding/proxy/` (root-owned on Linux, see the spike, and rotation needs `USR1`);
+Traefik's metrics (request counters without a time; siding would have to sample them in the
+background); Sablier's sessions (dropped with D1).
 
-### D3. Labels in the override
-When `up` finds `dev.siding.idle` on the proxy, the override adds to every service
-`sablier.enable: "true"` and `sablier.group: <project>`, and to every routed service
-`traefik.docker.allownonrunning: "true"` and a middleware `<project>-<service>-idle` with
-`plugin.sablier.group=<project>`, `sablierUrl=http://<sablier container>:10000`,
-`sessionDuration=<idle>s` and `blocking.timeout=2m`; its routers list `<name>-idle,<name>-id`.
-Only container labels change, never those of networks or volumes. The idle duration is written
-at `up`, so a changed `--idle` applies to a stack from its next `up`, as the spec says. One
-group per Compose project means one request wakes the whole stack and any request keeps it
-awake. Alternatives: one group per service (an `api` would sleep while `web` is used and fail
-on its first call); the `dynamic` strategy (a waiting page answered by the plugin, not the
-service: `curl` and the probe would read HTML that is not the app's, and agent and human would
-see different things).
+### D4. The last request of a stack
+`internal/idle` reads the proxy's container log through the Engine API (stdout only), keeps
+the lines that parse as JSON with a `RouterName`, and maps `<router>@docker` to the project of
+the running stacks by the longest project name that is a prefix followed by `-`, so
+`shop-main-x-web` belongs to `shop-main-x`, not `shop-main`. The last request of a stack is the
+latest of: its latest line, the newest `StartedAt` of its containers, the proxy's `StartedAt`
+(a new proxy has an empty record, and a new stack has not had its chance yet). A proxy whose
+command has no `--accesslog=true` (one of v0.3) has no record: nothing counts as idle, and `up`
+says once on stderr that `siding setup` turns making room on. siding's own probes count as
+requests, on purpose: an agent polling `status` is using the stack.
 
-### D4. up registers the stack with Sablier
-Sablier only stops what it has a session for. After `docker compose up -d`, `up` sends one
-request through the proxy to the stack's first routed address with a 1-second timeout and
-ignores the answer; the plugin opens the session before it waits for the stack. `up --wait`
-does the same through its probes. A stack without a routed service has no address, gets no
-session and never sleeps, which the spec states.
-
-### D5. The verdict `Idle` (maintainer's decision: reported, never woken by status)
-`verdict.Evaluate` gains the input "idle-enabled" (a container carries `sablier.group`) and
-returns `Idle` before anything else when no container is running, restarting or starting and
-every exit code is 0, 137 or 143. `status` evaluates the containers before it probes, and an
-`Idle` stack is never probed, so reading never wakes it; `status --wait` ends on `Idle` like on
-`Ready`. `Idle` exits 2 with the stack's `url` and the hint `a request to the url or siding up
---wait wakes it`. `ps` uses the same test for the state `idle`. A stack stopped with
-`docker compose stop` while idle-enabled is `Idle` too, correctly so: a request wakes it.
-Alternatives, asked: `status --wait` wakes the stack (a reading command with a side effect);
-no state of its own (an agent would read `Failed` or `TimedOut` and start fixing code).
-
-### D6. The last request: the proxy's access log
-While Sablier runs, `siding-proxy` writes a JSON access log to
-`~/.siding/proxy/<project>/access.log` with only the fields `StartUTC` and `RouterName`
-(`--accesslog.fields.defaultmode=drop`, headers dropped), so no URL, header or client address
-is kept. `internal/idle` reads the file backwards, at most 8 MiB, and maps router names
-`<project>-<service>[-route]@docker` to the projects it is asked about, longest prefix first.
-`up` rotates the file when it exceeds 16 MiB: it renames it to `access.log.1`, replacing the
-old one, and sends `USR1` to `siding-proxy`, on which Traefik reopens its log; the reader also
-looks into `access.log.1`. The file is a losable cache: a stack without a line in it has an
-unknown last request and is never stopped to make room. siding's own probes count as requests,
-on purpose: an agent polling `status` is using the stack. Alternatives: Sablier's sessions (its
-API has no listing; its storage file is an internal format); Traefik's metrics (counters
-without time; siding would have to sample them in the background).
-
-### D7. Making room (maintainer's decision: only idle stacks, longest idle first)
+### D5. Making room (maintainer's decision: only idle stacks, longest idle first)
 Where `up` checks the budget (`checkBudget`, and in the queue only the first in line), a stack
-that does not fit triggers: list the other stacks that run, are idle-enabled and whose last
-request is known and at least 5 minutes old; sort them by last request, oldest first; take the
-shortest prefix whose memory in use makes the new stack fit. If even all of them do not, stop
-nothing. Otherwise stop each with `docker compose -p <project> stop` (by project name, no
-compose file needed, as `down`), print `stopped idle stack <project> (no request for 20m,
-1.0 GiB)` on stderr, read the memory again, and continue. `--force` skips this. The stopped
-stacks are `Idle` and wake on their next request. The 5 minutes are a constant, not a setting.
-Alternatives, asked: any other stack, least recently used first (could stop the stack another
-agent is testing); none (only Sablier's duration frees memory).
+that does not fit triggers: with the threshold on and a record present, list the other running
+or partial stacks whose last request is at least the threshold ago; sort them oldest first;
+take the shortest prefix whose memory in use makes the new stack fit. If even all of them do
+not, stop nothing. Otherwise stop each with `docker compose -p <project> stop` (by project name,
+no compose file needed, as `down`), print `stopped idle stack <project> (no request for 20m,
+1.0 GiB)` on stderr, read the memory again, and continue. `--force` skips this. In the queue
+the log is read at most every 30 seconds, not on every two-second check. Alternatives, asked:
+any other stack, least recently used first (could stop the stack another agent is testing);
+none.
+
+### D6. The verdict `Stopped` (maintainer's decision on the name)
+`verdict.Evaluate` returns `Stopped` before anything else when no container is running,
+restarting or starting, every exit code is 0, 137 or 143, and at least one service has a route
+path or a healthcheck (a stack of one-off services that all exited 0 stays `Ready`, as in
+v0.3). siding cannot tell who stopped a stack, so a stack stopped by hand is `Stopped` too;
+both are started with `siding up`. `status` evaluates the containers before it probes and
+never probes a `Stopped` stack; `status --wait` ends on it like on `Ready`; it exits 2 with the
+stack's `url` and the hint `siding up --wait`. `ps` keeps its state `stopped`. Alternative,
+asked: `Idle`, with a state `idle` in `ps` (claims to know why the stack is stopped).
+
+### D7. The skill
+The skill names `Stopped` under exit 2 with `siding up --wait --json` to start the stack again,
+says that `siding status --json` holds the stack's `url` without starting anything, and that
+only the addresses siding reports work, never `localhost:<port>` from the compose file. It
+does not mention `--idle`: the threshold is the user's decision.
 
 ### D8. Labels, codes, documents, tests
-New label `dev.siding.idle` (proxy); the Sablier and `traefik.docker.allownonrunning` labels in
-the override go into the conventions of CLAUDE.md and `openspec/config.yaml`. New verdict
-`Idle`, new `ps` state `idle`, new error code `PluginUnavailable` (setup reads the proxy's log
-after the start for Traefik's message that plugins are disabled). `Setup` gains `idleSeconds`.
-`proxy.Config` gains the Sablier container name, so the end-to-end tests run
-`siding-test-e2e-sablier` next to `siding-test-e2e-proxy`. Golden files: overrides with and
-without idle, the proxy's compose file with and without Sablier, `Status` with `Idle`, `Setup`
-with `idleSeconds`. The images are pulled in the inner daemon only; the host's footprint does
-not change.
-
-### D9. The skill
-The skill names `Idle` under exit 2 with `siding up --wait --json` to wake the stack, says
-that `siding status --json` holds the stack's `url` without starting anything, and that only
-the addresses siding reports work, never `localhost:<port>` from the compose file. It does not
-mention `--idle`: turning idle stop on or off is the user's decision.
+New label `dev.siding.idle` (proxy), into the conventions of CLAUDE.md and
+`openspec/config.yaml`. New verdict `Stopped`; `Setup` gains `idle`; no new error code.
+Golden files: the proxy's compose file, `Status` with `Stopped`, `Setup` with `idle`. The
+end-to-end test makes room with `--idle 10s` and a small budget.
 
 ## Risks / Trade-offs
 
-- [Sablier starts a group's containers without Compose's `depends_on` order, so `api` may
-  start before `db` is healthy] → task 1 checks it with a stack using
-  `depends_on: condition: service_healthy`; if Sablier ignores the order, the phase stops there
-  and the maintainer decides (wake through Compose instead, or accept with restart policies).
-- [A one-off service (a migration that exited 0) is started again on wake] → task 1 checks
-  what Sablier does with exited containers; migrations are usually idempotent; noted in the
-  README.
-- [The first start of the proxy with idle on needs the network to download the plugin] → the
-  cache under `~/.siding/proxy/<project>/plugins/`; setup fails with `PluginUnavailable` and the
-  hint `--idle off` instead of leaving routes without their middleware.
-- [A wake by request ignores the budget] → `ps` and `ui` show the total over budget; the next
-  `up` makes room or queues as usual. A non-goal of this phase.
-- [The access log grows with traffic] → only two fields per line, rotated at 16 MiB.
-- [Sablier holds the Docker socket and can start and stop any container] → it acts only on
-  containers with `sablier.enable`, which siding writes only into its own override; it publishes
-  no port and is reachable only on the network `siding`.
-- [A long request blocks up to 2 minutes while a slow stack wakes] → the 503 after 2 minutes
-  names nothing; `siding status` then shows which service is not ready.
-- [Sablier or the plugin changes its labels or flags] → both pinned; the end-to-end test sleeps
-  and wakes a stack against the pinned versions.
+- [A stack used without the proxy (tests through `docker compose exec`, a worker) counts as
+  idle and can be stopped under pressure] → only under pressure and after the threshold; its
+  next `status` says `Stopped` with the hint, and the skill tells the agent to run
+  `siding up --wait`; `--idle 30m` or `--idle off` for such setups; noted in the README.
+- [A request to a stopped stack gets a plain 404] → `ps`, `ui` and `status` show it as stopped;
+  a page for it is a non-goal of this phase.
+- [Reading up to 30 MiB of log on a full budget] → only when a stack does not fit, and at most
+  every 30 seconds in the queue.
+- [Traefik changes the fields of its JSON access log] → pinned image; a golden of the proxy's
+  compose file and the end-to-end test read a real line.
+- [`docker compose -p <project> stop` without a compose file] → Compose acts on the project's
+  containers by label, as for `down`; checked in the end-to-end test.
 
 ## Migration Plan
 
-Nothing to migrate. A proxy of v0.3 has no `dev.siding.idle`; until `setup --idle` runs,
-siding behaves as v0.3, and the proxy's compose file is byte for byte what v0.3 writes. Turning
-idle stop on recreates the proxy project (stacks keep running) and applies to each stack from
-its next `up`. Rollback: `siding setup --idle off`, then `siding up` in the worktrees setup
-names, then `siding setup` once more removes Sablier.
+The first `siding setup` of v0.4 recreates the proxy with the record (Compose sees the changed
+file); running stacks keep running. Until then `up` makes no room and says so. No label, file or
+document needs migrating. Rollback: `siding setup --idle off`.

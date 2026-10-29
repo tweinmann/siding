@@ -25,6 +25,6 @@ anyway, without stopping any stack.
 - **WHEN** the other stacks and the estimate fit into the budget
 - **THEN** `siding up` behaves as without a budget
 
-#### Scenario: Sleeping stacks use nothing
-- **WHEN** a sleeping stack held 2 GiB before it was stopped
-- **THEN** it counts 0 bytes against the budget while it sleeps
+#### Scenario: Stopped stacks use nothing
+- **WHEN** a stack held 2 GiB before it was stopped to make room
+- **THEN** it counts 0 bytes against the budget while it is stopped
