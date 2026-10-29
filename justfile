@@ -42,6 +42,16 @@ build-darwin:
       GOOS=darwin GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o bin/siding-darwin-$arch ./cmd/siding; \
     done
 
+# Build the release binaries into dist/: static, for macOS and Linux on arm64 and amd64, with
+# the version, and SHA256SUMS in the format shasum -a 256 -c reads on macOS
+dist version:
+    rm -rf dist && mkdir -p dist
+    for os in darwin linux; do for arch in arm64 amd64; do \
+      GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version={{version}}" \
+        -o dist/siding-$os-$arch ./cmd/siding; \
+    done; done
+    cd dist && sha256sum siding-* > SHA256SUMS
+
 # Inner daemon: a compose project with a healthcheck, ports reset by an override, Traefik routing
 smoke-docker:
     hack/smoke/docker.sh

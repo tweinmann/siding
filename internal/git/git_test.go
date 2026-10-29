@@ -184,3 +184,66 @@ func TestMergeState(t *testing.T) {
 		})
 	}
 }
+
+func TestMainWorktree(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	main := newRepo(t)
+	linked := filepath.Join(filepath.Dir(main), "shop-feature-x")
+	sh(t, main, "worktree", "add", "-q", "-b", "feature/x", linked)
+	c := Client{}
+	for _, tt := range []struct {
+		dir    string
+		linked bool
+	}{{main, false}, {linked, true}} {
+		w, err := c.Worktree(ctx, tt.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		real, _ := filepath.EvalSymlinks(main)
+		if w.MainTop() != real || w.Linked() != tt.linked {
+			t.Errorf("%s: main top %q, linked %v", tt.dir, w.MainTop(), w.Linked())
+		}
+	}
+	// A common git directory not named .git has no main worktree.
+	if w := (Worktree{Top: "/src/shop", CommonDir: "/src/shop.git"}); w.MainTop() != "" || w.Linked() {
+		t.Errorf("bare: %q %v", w.MainTop(), w.Linked())
+	}
+}
+
+func TestTracked(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := newRepo(t)
+	for name, content := range map[string]string{".env.example": "A=1\n", ".env": "A=not-a-real-token\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sh(t, dir, "add", ".env.example")
+	c := Client{}
+	for path, want := range map[string]bool{".env.example": true, ".env": false, "missing.env": false} {
+		got, err := c.Tracked(ctx, dir, path)
+		if err != nil || got != want {
+			t.Errorf("%s: %v, %v, want %v", path, got, err, want)
+		}
+	}
+}
+
+func TestTop(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := newRepo(t)
+	sh(t, dir, "checkout", "-q", "--detach")
+	sub := filepath.Join(dir, "web")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	real, _ := filepath.EvalSymlinks(dir)
+	if top, err := (Client{}).Top(ctx, sub); err != nil || top != real {
+		t.Errorf("detached, in a subdirectory: %q, %v", top, err)
+	}
+	if _, err := (Client{}).Top(ctx, t.TempDir()); code(err) != fail.NotAGitRepository {
+		t.Errorf("outside: %v", err)
+	}
+}

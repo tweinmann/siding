@@ -63,6 +63,8 @@ const (
 	SnapshotNotFound = "SnapshotNotFound"
 	// SnapshotExists: the repository already has a snapshot of that name.
 	SnapshotExists = "SnapshotExists"
+	// EnvFileMissing: a linked worktree lacks an untracked env file the main worktree has.
+	EnvFileMissing = "EnvFileMissing"
 	// Internal: an unexpected error without a code of its own.
 	Internal = "Internal"
 )

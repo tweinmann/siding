@@ -234,6 +234,8 @@ type skillDocument struct {
 	header
 	Name string `json:"name"`
 	Text string `json:"text"`
+	// Path is where skill --install wrote the skill.
+	Path string `json:"path,omitempty"`
 }
 
 // gcDocument is what gc prints, and what the overview's /api/gc returns.

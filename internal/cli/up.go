@@ -224,6 +224,11 @@ func (a *app) up(cmd *cobra.Command, f upFlags, w waitFlags, asJSON bool) error 
 		}
 	}
 
+	if path, err := compose.FindFile(a.opts.Dir, wt.Top, f.file); err == nil {
+		if err := a.checkEnvFiles(ctx, wt, path, project); err != nil {
+			return err
+		}
+	}
 	file, p, err := a.loadProject(ctx, wt.Top, f.file, project)
 	if err != nil {
 		return err

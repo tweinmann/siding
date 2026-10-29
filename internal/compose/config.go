@@ -6,6 +6,7 @@ package compose
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -267,4 +268,40 @@ func parseExpose(raw json.RawMessage) ([]int, error) {
 		return []int{first, last}, nil
 	}
 	return []int{first}, nil
+}
+
+// EnvFile is an env_file of a service: an absolute path, and whether Compose needs it.
+type EnvFile struct {
+	Path     string
+	Required bool
+}
+
+// EnvFiles returns the env files of every service in the output of UnresolvedConfig, each path
+// once, in order. An entry without "required" is required, as Compose has it.
+func EnvFiles(data []byte) ([]EnvFile, error) {
+	var raw struct {
+		Services map[string]struct {
+			EnvFile []struct {
+				Path     string `json:"path"`
+				Required *bool  `json:"required"`
+			} `json:"env_file"`
+		} `json:"services"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("read compose config: %w", err)
+	}
+	seen := map[string]int{}
+	var out []EnvFile
+	for _, name := range slices.Sorted(maps.Keys(raw.Services)) {
+		for _, f := range raw.Services[name].EnvFile {
+			required := f.Required == nil || *f.Required
+			if i, ok := seen[f.Path]; ok {
+				out[i].Required = out[i].Required || required
+				continue
+			}
+			seen[f.Path] = len(out)
+			out = append(out, EnvFile{Path: f.Path, Required: required})
+		}
+	}
+	return out, nil
 }

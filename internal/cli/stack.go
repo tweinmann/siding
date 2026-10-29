@@ -101,11 +101,18 @@ func (a *app) shownPort(ctx context.Context) int {
 
 // loadProject reads the compose configuration of a worktree as project.
 func (a *app) loadProject(ctx context.Context, top, file, project string) (string, *compose.Project, error) {
+	return a.loadConfig(ctx, top, file, project, a.opts.Compose.Config)
+}
+
+// loadConfig is loadProject with the Compose call that prints the configuration, e.g.
+// UnresolvedConfig when an env file is missing.
+func (a *app) loadConfig(ctx context.Context, top, file, project string,
+	config func(context.Context, compose.Invocation) ([]byte, error)) (string, *compose.Project, error) {
 	path, err := compose.FindFile(a.opts.Dir, top, file)
 	if err != nil {
 		return "", nil, err
 	}
-	data, err := a.opts.Compose.Config(ctx, compose.Invocation{Dir: top, Project: project, Files: []string{path}})
+	data, err := config(ctx, compose.Invocation{Dir: top, Project: project, Files: []string{path}})
 	if err != nil {
 		return "", nil, err
 	}

@@ -31,6 +31,21 @@ func (w Worktree) RepoName() string {
 	return filepath.Base(filepath.Dir(w.CommonDir))
 }
 
+// MainTop is the main worktree's top-level directory: the one holding the common git directory
+// when that is named .git. It is "" for a bare repository or a common directory elsewhere.
+func (w Worktree) MainTop() string {
+	if filepath.Base(w.CommonDir) != ".git" {
+		return ""
+	}
+	return filepath.Dir(w.CommonDir)
+}
+
+// Linked reports whether w is a linked worktree of a repository with a main worktree.
+func (w Worktree) Linked() bool {
+	main := w.MainTop()
+	return main != "" && main != w.Top
+}
+
 // Client runs git.
 type Client struct {
 	// Binary is the git executable; empty means "git" from PATH.
@@ -104,6 +119,20 @@ func (c Client) Worktree(ctx context.Context, dir string) (Worktree, error) {
 	return w, nil
 }
 
+// Top returns the top-level directory of the worktree containing dir, also with a detached
+// HEAD. It fails with NotAGitRepository outside a worktree.
+func (c Client) Top(ctx context.Context, dir string) (string, error) {
+	out, err := c.run(ctx, dir, "rev-parse", "--path-format=absolute", "--show-toplevel")
+	if err != nil {
+		if exitCode(err) > 0 {
+			return "", fail.New(fail.NotAGitRepository, "%s is not inside a git worktree", dir).
+				WithHint("run it in a git worktree, or name the skills directory with --dir")
+		}
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // Dirty reports whether git status lists any change in the worktree, untracked files
 // included and ignored files excluded.
 func (c Client) Dirty(ctx context.Context, top string) (bool, error) {
@@ -112,6 +141,18 @@ func (c Client) Dirty(ctx context.Context, top string) (bool, error) {
 		return false, err
 	}
 	return strings.TrimSpace(out) != "", nil
+}
+
+// Tracked reports whether git tracks path, relative to the worktree top.
+func (c Client) Tracked(ctx context.Context, top, path string) (bool, error) {
+	_, err := c.run(ctx, top, "ls-files", "--error-unmatch", "--", path)
+	switch {
+	case err == nil:
+		return true, nil
+	case exitCode(err) == 1:
+		return false, nil
+	}
+	return false, err
 }
 
 // Repo names a repository for commands that need no worktree: the worktree's directory, or,

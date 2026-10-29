@@ -1,0 +1,32 @@
+# Publishes a release for a version tag: the level-1 checks and the release binaries run inside
+# the devcontainer image, as in ci.yml, so a release is built with the pinned tool versions.
+# Only this workflow may write to the repository's contents, and only to create the release.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: just test and just dist (in the devcontainer)
+        uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: |
+            just test
+            just dist "${{ github.ref_name }}"
+      # gh comes with the runner. A failed check above stops the job, so nothing is published.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --verify-tag --generate-notes --title "${{ github.ref_name }}"

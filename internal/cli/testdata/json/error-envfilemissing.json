@@ -1,0 +1,7 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Error",
+  "code": "EnvFileMissing",
+  "message": "this worktree lacks .env, which the main worktree /src/shop has and git does not track; without it the stack would start with blank values",
+  "hint": "copy it from the main worktree: cp /src/shop/.env /src/shop-feature-x/.env; or, if this worktree needs none, create an empty one: touch .env"
+}

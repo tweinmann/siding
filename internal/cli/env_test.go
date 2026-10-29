@@ -438,10 +438,13 @@ type composeRun struct {
 }
 
 type fakeCompose struct {
-	mu     sync.Mutex
-	config string
-	runs   []composeRun
-	runErr error
+	mu         sync.Mutex
+	config     string
+	unresolved string
+	// configErr fails Config only, as Compose does when an env_file is missing.
+	configErr error
+	runs      []composeRun
+	runErr    error
 	// execErr fails runs of docker compose exec, after writing execOutput.
 	execErr    error
 	execOutput string
@@ -451,6 +454,18 @@ type fakeCompose struct {
 }
 
 func (c *fakeCompose) Config(context.Context, compose.Invocation) ([]byte, error) {
+	if c.configErr != nil {
+		return nil, c.configErr
+	}
+	return []byte(c.config), nil
+}
+
+// UnresolvedConfig is the config without env files read: the same, unless a test sets
+// unresolved, e.g. with env_file entries.
+func (c *fakeCompose) UnresolvedConfig(context.Context, compose.Invocation) ([]byte, error) {
+	if c.unresolved != "" {
+		return []byte(c.unresolved), nil
+	}
 	return []byte(c.config), nil
 }
 

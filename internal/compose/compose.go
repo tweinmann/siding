@@ -98,6 +98,19 @@ func (c *CLI) Config(ctx context.Context, inv Invocation) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// UnresolvedConfig prints the normalised configuration without reading env files, so it
+// succeeds even when an env_file is missing; EnvFiles reads their paths from it.
+func (c *CLI) UnresolvedConfig(ctx context.Context, inv Invocation) ([]byte, error) {
+	if err := c.checkVersion(ctx); err != nil {
+		return nil, err
+	}
+	var out, errOut bytes.Buffer
+	if err := c.exec(ctx, inv, inv.args("config", "--no-env-resolution", "--format", "json"), &out, &errOut); err != nil {
+		return nil, composeError("read the compose configuration", errOut.String(), err)
+	}
+	return out.Bytes(), nil
+}
+
 // Run runs docker compose with args, streaming its output. On failure the error carries the
 // last lines Compose printed on stderr.
 func (c *CLI) Run(ctx context.Context, inv Invocation, args []string, stdout, stderr io.Writer) error {

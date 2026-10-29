@@ -67,6 +67,8 @@ type Options struct {
 // Git answers questions about worktrees.
 type Git interface {
 	Worktree(ctx context.Context, dir string) (git.Worktree, error)
+	Top(ctx context.Context, dir string) (string, error)
+	Tracked(ctx context.Context, top, path string) (bool, error)
 	Dirty(ctx context.Context, top string) (bool, error)
 	MergeState(ctx context.Context, r git.Repo, branch string) (git.MergeState, error)
 }
@@ -74,6 +76,7 @@ type Git interface {
 // Compose runs docker compose.
 type Compose interface {
 	Config(ctx context.Context, inv compose.Invocation) ([]byte, error)
+	UnresolvedConfig(ctx context.Context, inv compose.Invocation) ([]byte, error)
 	Run(ctx context.Context, inv compose.Invocation, args []string, stdout, stderr io.Writer) error
 }
 
@@ -144,7 +147,7 @@ func New(opts Options) *cobra.Command {
 		newUICommand(a),
 		newTeardownCommand(a),
 		newSnapshotCommand(a),
-		newSkillCommand(),
+		newSkillCommand(a),
 	)
 	return root
 }
