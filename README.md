@@ -10,6 +10,53 @@ and tells you and your coding agents whether it actually runs and what it costs.
 > rough edges and changes before v1. The plan is in [openspec/changes/](openspec/changes)
 > (one change per phase), what siding does today in [openspec/specs/](openspec/specs).
 
+## Why siding
+
+Coding agents work best in parallel: one per task, each in its own git worktree. Writing the
+code is then the easy part. What stays open is whether it runs: an agent reports "done" after
+the unit tests pass, but the app, with its database, its API and its frontend, never started.
+And if you start it, the worktrees get in each other's way:
+
+- **They collide.** Two copies of the same compose file fight over port 3000, a fixed
+  `container_name` or a shared volume. The agent edits the compose file to get around it, or
+  stops the other branch's stack.
+- **"Started" is not "runs".** `docker compose up -d` returns as soon as the containers exist.
+  Whether the API crashed two seconds later, or listens on the wrong interface, nobody checks.
+- **Nobody knows which is which.** `localhost:3000`, `localhost:3001`, `localhost:3002`: which
+  tab is which branch, and why does the login of one break the other's session?
+- **The laptop fills up.** Five stacks at a gigabyte or two each, and the machine swaps.
+
+siding fixes this for apps that already run with Docker Compose, without changing them:
+
+- **One stack per worktree.** Your unchanged compose file runs as its own Compose project per
+  branch, with its own containers, volumes and network. siding adds one override that removes
+  published ports, so nothing collides.
+- **One address per branch.** One local proxy routes `http://shop.feature-login.localhost` to
+  that branch's stack: a stable address, its own origin and its own cookies.
+- **A verdict, not a guess.** `siding up --wait` ends with `Ready` only when every healthcheck is
+  healthy and every routed service answers through the proxy. Otherwise it names the service,
+  the reason, a hint and its last log lines, as JSON an agent acts on. A skill teaches your
+  agent to do exactly that before it says "done".
+- **One view of everything.** `siding ps` and `siding ui` show every stack on the machine, its
+  address and what it costs. A memory budget queues or makes room instead of letting the
+  machine swap, and `siding gc` removes what is merged.
+
+What it looks like for an agent:
+
+```console
+$ siding up --wait --json        # abridged
+{ "kind": "Status", "verdict": "Failed",
+  "failure": { "service": "api", "reason": "Exited", "hint": "exited with code 1; see its last log lines",
+               "logs": ["connecting to postgres://app:***@db/app", "cannot connect to db"] } }
+```
+
+The agent fixes `api`, runs it again, and reports `Ready` with
+`http://shop.feature-login.localhost` for you to try.
+
+siding is not an agent manager, not a sandbox for the agent, not Kubernetes and not production.
+It runs your stacks locally, and uninstalling it leaves plain Compose projects that keep
+running.
+
 ## Get started
 
 siding needs Docker with Compose 2.24 or later, and git. Your compose file stays as it is. The

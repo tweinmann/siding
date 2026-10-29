@@ -6,6 +6,7 @@
 - [x] 1.2 Add `MainTop` and `Tracked` to `internal/git` (D4); verify with tests on a real repository with a linked worktree, a bare-like custom layout, and a tracked and an untracked file
 - [x] 1.3 Add reading the `env_file` paths from `docker compose config --no-env-resolution --format json` to `internal/compose`, with `required: false` kept; verify with a captured config and, in `just smoke-stacks`, against `docker compose config` with a missing file
 - [x] 1.4 Restructure the README's "Using siding" as the user journey (D8): "Get started" in the order a user walks it (install, once per machine, once per repository, per task with a worktree and an agent, keeping an eye on it, after the merge), a few commands and sentences per step with links, and "Reference" with today's sections (routing labels, verdict and exit codes, lint rules, snapshots and seeding, memory budget and idle stacks, builds, devcontainer, removing siding); verify that no content of today's README is lost and every link resolves
+- [x] 1.5 Add "Why siding" before "Get started" (maintainer's request): the problem parallel agents and branches have with Compose, what siding does about it, an example verdict, and what siding is not; verify every claim matches `openspec/specs/`
 
 ## 2. Releases
 
