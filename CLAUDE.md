@@ -92,7 +92,7 @@ requests and on `main`, all inside the devcontainer image.
 
 | Command | Run from | Purpose |
 |---|---|---|
-| `just test` | devcontainer | level-1 checks, as in CI: gofmt, vet, `go test -race`, golangci-lint, `openspec validate --all --strict` |
+| `just test` | devcontainer | level-1 checks, as in CI: gofmt, vet, `go test -race`, golangci-lint, `openspec validate --all --strict`, and `hack/test-install.sh` (`install.sh` against a release served on loopback) |
 | `just golden` | devcontainer | rewrite golden files after an intended change |
 | `just build` | devcontainer | build a static `bin/siding` (linux) |
 | `just dist <version>` | devcontainer | build the release binaries (macOS and Linux, arm64 and amd64) and `SHA256SUMS` into `dist/`; CI does it on `v*` tags and publishes a GitHub Release |

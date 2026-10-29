@@ -54,8 +54,9 @@ Alternative: `/usr/local/bin` by default (needs `sudo` on Linux and on many Macs
 manual way in the README keeps the `xattr` line for downloads through a browser.
 
 ### D6. The test
-`hack/test-install.sh` (bash, the devcontainer guard of `hack/lib.sh`) builds with
-`just dist v0.0.0-test` into a temporary directory, serves it with `python3 -m http.server` on a
+`hack/test-install.sh` (bash, the `SIDING_DEVCONTAINER` guard, but no Docker) builds this
+platform's binary as `just dist` does, with the version `v0.0.0-test`, and its `SHA256SUMS`
+into a temporary directory (the script downloads only that one binary), serves it with `python3 -m http.server` on a
 free loopback port, and runs `install.sh` with `SIDING_DOWNLOAD_URL` and `SIDING_INSTALL_DIR`
 pointing at temporary directories: an install that reports `v0.0.0-test`, an update over it, a
 broken checksum that installs nothing, and an install directory missing from the `PATH`. It runs

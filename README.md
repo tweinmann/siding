@@ -65,6 +65,26 @@ steps below follow the order you walk them in; each links to the details in the
 
 ### 1. Install siding
 
+```sh
+curl -fsSL https://raw.githubusercontent.com/tweinmann/siding/main/install.sh | sh
+```
+
+The script downloads the latest release for your machine (macOS or Linux, arm64 or amd64),
+checks it against the release's `SHA256SUMS`, installs it as `~/.local/bin/siding` without
+`sudo`, and tells you if that directory is not on your `PATH`. Run it again to update.
+`SIDING_VERSION=v0.5.0` installs a given release, `SIDING_INSTALL_DIR=/usr/local/bin` another
+directory (with `sudo sh` if it needs root).
+
+To read the script before it runs:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/tweinmann/siding/main/install.sh
+less install.sh && sh install.sh
+```
+
+<details>
+<summary>Without the script</summary>
+
 Download the binary for your platform and `SHA256SUMS` from the
 [latest release](https://github.com/tweinmann/siding/releases/latest), then:
 
@@ -72,9 +92,13 @@ Download the binary for your platform and `SHA256SUMS` from the
 shasum -a 256 -c SHA256SUMS --ignore-missing      # sha256sum on Linux
 chmod +x siding-darwin-arm64                       # siding-<os>-<arch> of your platform
 sudo mv siding-darwin-arm64 /usr/local/bin/siding
-xattr -d com.apple.quarantine /usr/local/bin/siding  # macOS: the binary is not signed yet
+xattr -d com.apple.quarantine /usr/local/bin/siding  # macOS, after a browser download: the binary is not signed yet
 siding version
 ```
+
+With Go: `go install github.com/tweinmann/siding/cmd/siding@latest`.
+
+</details>
 
 The binaries are static and need nothing but Docker and git. To build siding yourself, see
 [Developing siding](#developing-siding).
@@ -427,7 +451,7 @@ on your machine and siding's tests never touch your Docker containers.
 
    | Command | Purpose |
    |---|---|
-   | `just test` | formatting, vet, unit tests with `-race`, golangci-lint, OpenSpec validation (as in CI) |
+   | `just test` | formatting, vet, unit tests with `-race`, golangci-lint, OpenSpec validation, the test of `install.sh` (as in CI) |
    | `just golden` | rewrite golden files after an intended output change |
    | `just build` | build `bin/siding` |
    | `just dist <version>` | the release binaries and `SHA256SUMS` in `dist/`, as CI builds them for a `v*` tag |
