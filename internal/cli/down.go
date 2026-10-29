@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -74,6 +75,12 @@ func (a *app) down(cmd *cobra.Command, f downFlags) (downDocument, error) {
 		return downDocument{}, err
 	}
 	return doc, nil
+}
+
+// stopProject stops every container of a project by name, without files and without removing
+// anything; siding up starts it again.
+func (a *app) stopProject(ctx context.Context, project string, stderr io.Writer) error {
+	return a.opts.Compose.Run(ctx, compose.Invocation{Dir: a.opts.Home, Project: project}, []string{"stop"}, stderr, stderr)
 }
 
 // keepsWork refuses to remove data while the worktree has changes or the branch is unmerged.

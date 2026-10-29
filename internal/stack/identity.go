@@ -19,6 +19,7 @@ const (
 	LabelGitDir   = "dev.siding.gitdir"
 	LabelBudget   = "dev.siding.budget"
 	LabelBuilds   = "dev.siding.builds"
+	LabelIdle     = "dev.siding.idle"
 	LabelShared   = "dev.siding.shared"
 	// LabelHostAlias, on siding-proxy, is what host.docker.internal resolves to in it.
 	LabelHostAlias = "dev.siding.host-alias"

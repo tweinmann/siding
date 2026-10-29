@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/tweinmann/siding/internal/fail"
+	"github.com/tweinmann/siding/internal/proxy"
+	"github.com/tweinmann/siding/internal/stack"
 	"github.com/tweinmann/siding/internal/testutil"
 )
 
@@ -66,7 +68,7 @@ func TestSetup(t *testing.T) {
 		e := newEnv(t)
 		setupDoc(t, e)
 		code, stdout, _ := e.run("setup")
-		if code != exitOK || stdout != "siding-proxy already runs on http://*.localhost/, memory budget 12.0 GiB, 4 build slots\n" {
+		if code != exitOK || stdout != "siding-proxy already runs on http://*.localhost/, memory budget 12.0 GiB, 4 build slots, idle stacks make room after 5m0s\n" {
 			t.Errorf("exit %d, stdout %q", code, stdout)
 		}
 	})
@@ -127,6 +129,52 @@ func TestSetup(t *testing.T) {
 		}
 		if code, stdout, _ := e.run("setup", "--builds", "0", "--json"); code != exitFailed || !strings.Contains(stdout, `"code": "InvalidArguments"`) {
 			t.Errorf("--builds 0: exit %d, %s", code, stdout)
+		}
+	})
+
+	t.Run("idle threshold", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t)
+		if doc := setupDoc(t, e); doc.Idle != "5m0s" || e.docker.proxy.Labels[stack.LabelIdle] != "" {
+			t.Errorf("default: %+v, labels %v", doc, e.docker.proxy.Labels)
+		}
+		if doc := setupDoc(t, e, "--idle", "15m"); doc.Idle != "15m0s" || e.docker.proxy.Labels[stack.LabelIdle] != "900" {
+			t.Errorf("set: %+v", doc)
+		}
+		// Another setting keeps it, as the spec's scenario "Another threshold" says.
+		if doc := setupDoc(t, e, "--port", "8080"); doc.Idle != "15m0s" || e.docker.proxy.Labels[stack.LabelIdle] != "900" {
+			t.Errorf("kept: %+v", doc)
+		}
+		if doc := setupDoc(t, e, "--idle", "off"); doc.Idle != "off" || e.docker.proxy.Labels[stack.LabelIdle] != "0" {
+			t.Errorf("off: %+v", doc)
+		}
+		if doc := setupDoc(t, e); doc.State != "unchanged" || doc.Idle != "off" {
+			t.Errorf("off kept: %+v", doc)
+		}
+		if code, stdout, _ := e.run("setup"); code != exitOK || !strings.Contains(stdout, "idle stacks are never stopped") {
+			t.Errorf("text when off: %q", stdout)
+		}
+		if doc := setupDoc(t, e, "--idle", "default"); doc.Idle != "5m0s" {
+			t.Errorf("default again: %+v", doc)
+		}
+		if _, ok := e.docker.proxy.Labels[stack.LabelIdle]; ok {
+			t.Error("--idle default must remove the label")
+		}
+		for _, bad := range []string{"5s", "soon", "-1m"} {
+			before := e.docker.proxyGen
+			code, stdout, _ := e.run("setup", "--idle", bad, "--json")
+			if code != exitFailed || !strings.Contains(stdout, `"code": "InvalidArguments"`) || e.docker.proxyGen != before {
+				t.Errorf("--idle %s: exit %d, %s", bad, code, stdout)
+			}
+		}
+	})
+
+	t.Run("records requests", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t)
+		setupDoc(t, e)
+		if !slices.Contains(e.docker.proxy.Cmd, proxy.AccessLogFlag) {
+			t.Errorf("the proxy does not record requests: %v", e.docker.proxy.Cmd)
 		}
 	})
 

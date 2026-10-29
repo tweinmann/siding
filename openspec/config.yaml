@@ -24,7 +24,8 @@ context: |
   Status: pre-alpha. Phase 0 (repository, devcontainer, OpenSpec, CI) and Phase 1 (v0.1:
   stacks per worktree, routing through siding-proxy, the verdict of status) are done; Phase 2
   (v0.2: the overview siding ui, the memory budget, gc, lint, teardown) is done; Phase 3
-  (v0.3: snapshots and seeding, the start queue, the build limit, learned peaks) is done.
+  (v0.3: snapshots and seeding, the start queue, the build limit, learned peaks) is done;
+  Phase 4 (v0.4: idle stacks make room under memory pressure, the verdict `Stopped`) is done.
   OpenSpec is the only planning source: `openspec/specs/` is what siding
   does today, `openspec/changes/` what it is about to do (the roadmap is the
   `phase-<n>-<slug>` changes), `openspec/changes/archive/` how it got here. CLAUDE.md holds the
@@ -92,8 +93,9 @@ context: |
     service with several), `dev.siding.seed` (`volume|script|none`), `dev.siding.seed.command`.
     Volume label `dev.siding.shared`. Snapshot volumes: `dev.siding.snapshot`,
     `dev.siding.snapshot-volume`, `dev.siding.snapshot-created`. On `siding-proxy`:
-    `dev.siding.budget` (bytes), `dev.siding.builds` (build slots) and `dev.siding.host-alias`
-    (what `host.docker.internal` resolves to). The machine and
+    `dev.siding.budget` (bytes), `dev.siding.builds` (build slots), `dev.siding.idle` (idle
+    threshold in seconds, `0` for off) and `dev.siding.host-alias` (what `host.docker.internal`
+    resolves to). The machine and
     worktree labels exist from v0.1 so that remote hosts need no migration later.
   - Development and every test run in a devcontainer with its own Docker daemon
     (Docker-in-Docker); see the spec `dev-environment`. There is no Docker-outside-of-Docker
@@ -108,10 +110,11 @@ context: |
     memory budget (refuse, exit 3), `just build-darwin` to try siding on the Mac.
   - v0.3 (phase-3): snapshots and `--seed`, queue for capacity, parallel build limit, learned
     peaks.
-  - v0.4 (phase-4): idle stop and wake on request, stopping idle stacks under pressure.
+  - v0.4 (phase-4): stopping idle stacks under memory pressure, the verdict `Stopped`.
   - v0.5 (phase-5): remote Docker host (Docker context), local forwarder for `*.localhost`,
     `HOST` column in `ps`.
-  - Later: HTTP errors from the proxy in the verdict, a shared server with a database per
+  - Later: idle stop after a time and wake on request (Sablier ignores `depends_on` on wake,
+    see the phase 4 spike), HTTP errors from the proxy in the verdict, a shared server with a database per
     branch, integrations with agent managers, scoped Docker access for agents.
 
   ## Rules for proposals

@@ -17,6 +17,8 @@ const (
 	Starting = "Starting"
 	Failed   = "Failed"
 	TimedOut = "TimedOut"
+	// Stopped: no container runs and none failed; siding up starts the stack again.
+	Stopped = "Stopped"
 )
 
 // Reasons a service is not ready. Part of the --json contract.
@@ -55,6 +57,8 @@ type Input struct {
 	Timeout time.Duration
 	// Seed is set when a seed command of this up failed; it decides the verdict.
 	Seed *Failure
+	// Healthchecks are the services the compose file gives a healthcheck.
+	Healthchecks map[string]bool
 }
 
 // Service is the state of one service.
@@ -120,6 +124,8 @@ func Evaluate(in Input) Result {
 	switch {
 	case in.Seed != nil:
 		res.Verdict, res.Failure = Failed, in.Seed
+	case stopped(in, byService):
+		res.Verdict = Stopped
 	case firstFailed != nil:
 		res.Verdict, res.Failure = Failed, firstFailed
 	case allReady:
@@ -130,6 +136,36 @@ func Evaluate(in Input) Result {
 		res.Verdict = Starting
 	}
 	return res
+}
+
+// stopCodes are the exit codes of a stop: 0, or SIGKILL (137) and SIGTERM (143) for a process
+// that does not exit 0 on SIGTERM.
+var stopCodes = map[int]bool{0: true, 137: true, 143: true}
+
+// stopped reports whether the whole stack was stopped, not crashed: every service has a
+// container, none runs, every exit code is one of a stop, and a service with a route path or a
+// healthcheck shows it was meant to keep running. A stack of one-off services that all exited 0
+// is done, not stopped.
+func stopped(in Input, byService map[string][]docker.Container) bool {
+	if len(in.Containers) == 0 {
+		return false
+	}
+	for _, name := range in.Services {
+		if len(byService[name]) == 0 {
+			return false
+		}
+	}
+	for _, c := range in.Containers {
+		if c.State != "exited" || !stopCodes[c.ExitCode] || c.OOMKilled {
+			return false
+		}
+	}
+	for _, name := range in.Services {
+		if _, routed := in.Routes[name]; routed || in.Healthchecks[name] {
+			return true
+		}
+	}
+	return false
 }
 
 // evaluateService looks at every container of a service; the worst one decides.

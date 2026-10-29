@@ -17,12 +17,14 @@ changing architecture.
 Phase 0 approved (2026-10-28). Phase 1 (v0.1) and Phase 2 (v0.2) approved and archived
 (2026-10-28, `openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing` and
 `…-phase-2-overview-and-budget`). Phase 3 (v0.3) approved and archived (2026-10-29,
-`…/2026-10-29-phase-3-snapshots-and-queue`). siding today: `setup [--port] [--budget]
-[--builds]`, `teardown [--snapshots]`, `up [--wait] [--force] [--seed]`, `status [--wait]`,
-`ps`, `logs`, `open`, `down [--volumes]`, `snapshot save|ls|rm`, `gc`, `lint`, `ui`, `skill`;
-routing by host and path through `siding-proxy`; a memory budget with a start queue and learned
-peaks; build slots; `just smoke-stacks`, `just build-darwin`. Next: Phase 4
-(`phase-4-idle-and-wake`, v0.4), starting with `/opsx:propose`.
+`…/2026-10-29-phase-3-snapshots-and-queue`). Phase 4 (v0.4, `phase-4-idle-and-wake`)
+implemented, waiting for approval; its spike dropped Sablier (see its design.md). siding
+today: `setup [--port] [--budget] [--builds] [--idle]`, `teardown [--snapshots]`, `up [--wait]
+[--force] [--seed]`, `status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`,
+`snapshot save|ls|rm`, `gc`, `lint`, `ui`, `skill`; routing by host and path through
+`siding-proxy`; a memory budget with a start queue and learned peaks, where idle stacks make
+room (the verdict `Stopped`); build slots; `just smoke-stacks`, `just build-darwin`. Next:
+Phase 5 (`phase-5-remote-host`, v0.5), starting with `/opsx:propose`.
 
 ## Working agreements
 
@@ -139,8 +141,8 @@ requests and on `main`, all inside the devcontainer image.
   label `dev.siding.shared`. Snapshot volumes: `dev.siding.snapshot` (name),
   `dev.siding.snapshot-volume` (the stack's volume key), `dev.siding.snapshot-created`, plus
   `dev.siding.repo` and `dev.siding.machine`. On `siding-proxy`: `dev.siding.budget` (the memory
-  budget in bytes), `dev.siding.builds` (build slots) and `dev.siding.host-alias` (what
-  `host.docker.internal` resolves to in the proxy).
+  budget in bytes), `dev.siding.builds` (build slots), `dev.siding.idle` (the idle threshold in seconds, `0`
+  for off) and `dev.siding.host-alias` (what `host.docker.internal` resolves to in the proxy).
 - Compose project `<repo>-<branch-slug>`, host `<repo>.<branch-slug>.localhost`, proxy
   `siding-proxy` on the network `siding`, override `.siding/override.yml`.
 - Docker state is read through the Docker Engine API (Go SDK); lifecycle operations invoke

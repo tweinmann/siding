@@ -39,6 +39,10 @@ type Container struct {
 	RestartCount int
 	OOMKilled    bool
 	Ports        []Port
+	// StartedAt is when the container last started; zero when it never did.
+	StartedAt time.Time
+	// Cmd is the container's command, its arguments after the image's entrypoint.
+	Cmd []string
 }
 
 // Port is a published port.
@@ -306,6 +310,7 @@ func fromInspect(in container.InspectResponse) Container {
 	if in.Config != nil {
 		ct.Image = in.Config.Image
 		ct.Labels = in.Config.Labels
+		ct.Cmd = in.Config.Cmd
 	}
 	if ct.Labels == nil {
 		ct.Labels = map[string]string{}
@@ -314,6 +319,9 @@ func fromInspect(in container.InspectResponse) Container {
 		ct.State = string(s.Status)
 		ct.ExitCode = s.ExitCode
 		ct.OOMKilled = s.OOMKilled
+		if t, err := time.Parse(time.RFC3339Nano, s.StartedAt); err == nil && t.Year() > 1 {
+			ct.StartedAt = t
+		}
 		if h := s.Health; h != nil {
 			ct.Health = string(h.Status)
 			if n := len(h.Log); n > 0 && h.Log[n-1] != nil {
@@ -442,11 +450,20 @@ func (c *Client) Volumes(ctx context.Context, labels map[string]string) ([]Volum
 
 // Logs returns the last tail lines a container wrote to stdout and stderr, in order.
 func (c *Client) Logs(ctx context.Context, id string, tail int) ([]string, error) {
+	return c.logs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Tail: strconv.Itoa(tail)})
+}
+
+// Stdout returns every line a container wrote to stdout that Docker still keeps, in order.
+func (c *Client) Stdout(ctx context.Context, id string) ([]string, error) {
+	return c.logs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, Tail: "all"})
+}
+
+func (c *Client) logs(ctx context.Context, id string, opts client.ContainerLogsOptions) ([]string, error) {
 	api, err := c.connect()
 	if err != nil {
 		return nil, err
 	}
-	rc, err := api.ContainerLogs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Tail: strconv.Itoa(tail)})
+	rc, err := api.ContainerLogs(ctx, id, opts)
 	if err != nil {
 		return nil, fmt.Errorf("logs of %s: %w", id, err)
 	}

@@ -3,9 +3,9 @@
 siding gives every git worktree its own Docker Compose stack, at its own `*.localhost` address,
 and tells you and your coding agents whether it actually runs and what it costs.
 
-> **Pre-alpha (v0.3).** Stacks per worktree, routing through one local proxy, the verdict of
-> `siding status`, the overview `siding ui`, a memory budget with a queue and learned peaks,
-> snapshots and seeding, a build limit, `gc` and `lint` work; expect
+> **Pre-alpha (v0.4).** Stacks per worktree, routing through one local proxy, the verdict of
+> `siding status`, the overview `siding ui`, a memory budget with a queue, learned peaks and
+> idle stacks that make room, snapshots and seeding, a build limit, `gc` and `lint` work; expect
 > rough edges and changes before v1. There are no releases
 > yet: build it from source (see below). The plan is in [openspec/changes/](openspec/changes)
 > (one change per phase), what siding does today in [openspec/specs/](openspec/specs).
@@ -52,14 +52,15 @@ ports, and puts siding's labels and routes on the services. `.siding/` ignores i
 ### Does it run?
 
 ```sh
-siding status                # Ready, Starting, Failed or TimedOut, per service
-siding status --wait         # until Ready or Failed, at most --timeout (3m)
+siding status                # Ready, Starting, Failed, TimedOut or Stopped, per service
+siding status --wait         # until Ready, Failed or Stopped, at most --timeout (3m)
 siding ps                    # every stack on this machine: state, address, memory
 ```
 
 `Ready` means every service with a healthcheck is healthy and every service with a route
 answers through the proxy. A failure names the service, the reason, a hint and its last log
-lines. Exit codes: 0 Ready, 1 Failed, 2 TimedOut or still starting. Every command prints one
+lines. `Stopped` means no container runs and none failed; `siding up` starts it again. Exit
+codes: 0 Ready, 1 Failed, 2 TimedOut, Stopped or still starting. Every command prints one
 JSON document with `--json`, for scripts and agents.
 
 ### Before the first up: lint
@@ -142,6 +143,25 @@ frees memory or `--timeout` (3 minutes) is up; then it exits 3. Stacks start in 
 began to wait. `siding ps` and `siding ui` show the line. A waiting `up` that you stop with
 Ctrl-C, or that is killed, leaves the line. `siding ps`
 shows the total against the budget.
+
+Before a stack waits or is refused, idle stacks make room for it. `up` stops other stacks that
+had no request through the proxy for 5 minutes, the one idle longest first, as many as the new
+stack needs, and only when that makes it fit; it says on stderr which ones it stopped. Stopping
+removes nothing: containers stop, volumes and networks stay. A stopped stack reports the
+verdict `Stopped` (exit code 2), and `siding up` in its worktree starts it again, in Compose's
+order; a request to its address does not start it (the proxy answers 404).
+
+```sh
+siding setup --idle 15m          # another idle threshold; "default" is 5m
+siding setup --idle off          # never stop a stack to make room
+```
+
+A request is anything that passes the proxy, `siding status` checks included. Work that does
+not, such as tests through `docker compose exec` or a queue worker, does not count, so such a
+stack can be stopped while it is busy; raise the threshold or turn it off if that matters. The
+proxy records only the router and the time of each request, in its container log, which Docker
+keeps at 30 MiB; no URL, header or cookie is kept. After upgrading siding, run `siding setup`
+once, so the proxy records requests: until then, no stack is stopped to make room.
 
 ### Overview
 

@@ -115,6 +115,8 @@ type setupDocument struct {
 	BudgetBytes int64 `json:"budgetBytes"`
 	// Builds is how many stacks may build images at once.
 	Builds int `json:"builds"`
+	// Idle is the idle threshold, e.g. 5m0s, or off.
+	Idle string `json:"idle"`
 }
 
 // stackDocument is what up prints without --wait.
@@ -136,11 +138,13 @@ type serviceAddress struct {
 // statusDocument is the verdict of status and up --wait.
 type statusDocument struct {
 	header
-	// Verdict is Ready, Starting, Failed or TimedOut.
+	// Verdict is Ready, Starting, Failed, TimedOut or Stopped.
 	Verdict  string           `json:"verdict"`
 	Stack    stackRef         `json:"stack"`
 	Services []serviceStatus  `json:"services,omitempty"`
 	Failure  *failureDocument `json:"failure,omitempty"`
+	// Hint says what to do about a Stopped stack.
+	Hint string `json:"hint,omitempty"`
 }
 
 type serviceStatus struct {

@@ -8,5 +8,6 @@
   "url": "http://*.localhost/",
   "state": "created",
   "budgetBytes": 12884901888,
-  "builds": 4
+  "builds": 4,
+  "idle": "5m0s"
 }

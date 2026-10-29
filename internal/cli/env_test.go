@@ -71,7 +71,7 @@ func newEnv(t *testing.T) *env {
 		t:       t,
 		base:    base,
 		repo:    filepath.Join(base, "shop"),
-		docker:  &fakeDocker{logs: map[string][]string{}, memory: map[string]uint64{}, memTotal: 16 << 30},
+		docker:  &fakeDocker{logs: map[string][]string{}, stdout: map[string][]string{}, memory: map[string]uint64{}, memTotal: 16 << 30},
 		compose: &fakeCompose{config: testConfig},
 		probe:   &fakeProbe{answers: map[string]probe.Response{}},
 		browser: &fakeBrowser{},
@@ -114,6 +114,7 @@ func newEnv(t *testing.T) *env {
 var publishedPort = regexp.MustCompile(`"127\.0\.0\.1:(\d+):80"`)
 var budgetLabel = regexp.MustCompile(`dev\.siding\.budget: "(\d+)"`)
 var buildsLabel = regexp.MustCompile(`dev\.siding\.builds: "(\d+)"`)
+var idleLabel = regexp.MustCompile(`dev\.siding\.idle: "(\d+)"`)
 var hostAliasLabel = regexp.MustCompile(`dev\.siding\.host-alias: "([^"]+)"`)
 
 // composeProxy does what docker compose up does for the proxy's project: it recreates the
@@ -149,8 +150,16 @@ func (e *env) composeProxy(r composeRun) {
 	if m := hostAliasLabel.FindStringSubmatch(string(data)); m != nil {
 		labels[stack.LabelHostAlias] = m[1]
 	}
+	if m := idleLabel.FindStringSubmatch(string(data)); m != nil {
+		labels[stack.LabelIdle] = m[1]
+	}
+	var cmd []string
+	if strings.Contains(string(data), proxy.AccessLogFlag) {
+		cmd = []string{proxy.AccessLogFlag}
+	}
 	e.docker.proxy = &docker.Container{ID: fmt.Sprintf("proxy-%d", e.docker.proxyGen), Name: "siding-proxy", Image: proxy.Image,
-		State: "running", Labels: labels, Ports: []docker.Port{{HostIP: "127.0.0.1", HostPort: port, ContainerPort: 80}}}
+		State: "running", Labels: labels, Cmd: cmd, StartedAt: e.clock.Now(),
+		Ports: []docker.Port{{HostIP: "127.0.0.1", HostPort: port, ContainerPort: 80}}}
 }
 
 func (e *env) git(args ...string) {
@@ -237,8 +246,10 @@ type fakeDocker struct {
 	networks   []docker.Network
 	volumes    []docker.Volume
 	logs       map[string][]string
-	memory     map[string]uint64
-	ensured    []string
+	// stdout is what each container wrote to stdout, e.g. the proxy's access log.
+	stdout  map[string][]string
+	memory  map[string]uint64
+	ensured []string
 }
 
 func (d *fakeDocker) add(c docker.Container) {
@@ -407,6 +418,12 @@ func (d *fakeDocker) Logs(_ context.Context, id string, tail int) ([]string, err
 		lines = lines[len(lines)-tail:]
 	}
 	return lines, nil
+}
+
+func (d *fakeDocker) Stdout(_ context.Context, id string) ([]string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.stdout[id]), nil
 }
 
 func (d *fakeDocker) Memory(_ context.Context, id string) (uint64, error) {

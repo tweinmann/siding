@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -19,10 +20,12 @@ func TestFromInspect(t *testing.T) {
 		ID:           "abc",
 		Name:         "/siding-proxy",
 		RestartCount: 2,
-		Config:       &container.Config{Image: "traefik:v3.7.16", Labels: map[string]string{"dev.siding.machine": "m"}},
+		Config: &container.Config{Image: "traefik:v3.7.16", Labels: map[string]string{"dev.siding.machine": "m"},
+			Cmd: []string{"--accesslog=true"}},
 		State: &container.State{
-			Status:   container.StateRunning,
-			ExitCode: 0,
+			Status:    container.StateRunning,
+			ExitCode:  0,
+			StartedAt: "2026-10-29T18:28:38.385704594Z",
 			Health: &container.Health{Status: container.Unhealthy, Log: []*container.HealthcheckResult{
 				{Output: "old"}, {Output: "connection refused\n"},
 			}},
@@ -34,13 +37,19 @@ func TestFromInspect(t *testing.T) {
 	want := Container{
 		ID: "abc", Name: "siding-proxy", Image: "traefik:v3.7.16", Labels: map[string]string{"dev.siding.machine": "m"},
 		State: "running", Health: "unhealthy", HealthOutput: "connection refused", RestartCount: 2,
-		Ports: []Port{{HostIP: "127.0.0.1", HostPort: 8080, ContainerPort: 80}},
+		Ports:     []Port{{HostIP: "127.0.0.1", HostPort: 8080, ContainerPort: 80}},
+		StartedAt: time.Date(2026, 10, 29, 18, 28, 38, 385704594, time.UTC), Cmd: []string{"--accesslog=true"},
 	}
 	if got := fromInspect(in); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
 	}
 	if got := fromInspect(container.InspectResponse{}); got.Labels == nil {
 		t.Error("labels must never be nil")
+	}
+	// A container that never started reports Docker's zero time.
+	never := container.InspectResponse{State: &container.State{Status: container.StateCreated, StartedAt: "0001-01-01T00:00:00Z"}}
+	if got := fromInspect(never); !got.StartedAt.IsZero() {
+		t.Errorf("never started: %v", got.StartedAt)
 	}
 }
 

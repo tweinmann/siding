@@ -158,3 +158,17 @@ func TestDownOnlyData(t *testing.T) {
 		t.Errorf("status: exit %d, %s", code, stdout)
 	}
 }
+
+func TestStopProject(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	a := &app{opts: e.opts}
+	if err := a.stopProject(t.Context(), "shop-main", &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	runs := e.compose.recorded()
+	// By project name, without a compose file, and it removes nothing.
+	if len(runs) != 1 || runs[0].inv.Project != "shop-main" || len(runs[0].inv.Files) != 0 || !slices.Equal(runs[0].args, []string{"stop"}) {
+		t.Errorf("runs %+v", runs)
+	}
+}

@@ -20,7 +20,7 @@ import (
 )
 
 // Exit codes. They are part of the contract with agents, like the --json documents: 0 Ready,
-// 1 Failed, 2 TimedOut (or Starting without --wait), 3 NoCapacity. A command that fails with
+// 1 Failed, 2 TimedOut or Stopped (or Starting without --wait), 3 NoCapacity. A command that fails with
 // an Error document exits 1.
 const (
 	exitOK       = 0
@@ -95,6 +95,7 @@ type Docker interface {
 	VolumeSizes(ctx context.Context) (map[string]int64, error)
 	RunHelper(ctx context.Context, h docker.Helper) (exit int, output []string, err error)
 	Logs(ctx context.Context, id string, tail int) ([]string, error)
+	Stdout(ctx context.Context, id string) ([]string, error)
 	Memory(ctx context.Context, id string) (uint64, error)
 }
 

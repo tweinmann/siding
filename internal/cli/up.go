@@ -113,21 +113,35 @@ func (a *app) checkBudget(ctx context.Context, project, repo string, p *compose.
 	if err != nil || check.Fits() {
 		return err
 	}
-	switch {
-	case force:
+	if force {
 		warnf(stderr, "%s; starting it anyway (--force)", capacityMessage(project, check))
 		return nil
-	case w.wait:
-		return a.waitInLine(ctx, project, repo, p, check, w.timeout, stderr)
+	}
+	// Idle stacks make room before the stack waits or is refused (spec idle-stop).
+	room := &roomMaker{a: a, project: project, stderr: stderr}
+	if check, err = a.fitAfterRoom(ctx, room, project, repo, p, check); err != nil || check.Fits() {
+		return err
+	}
+	if w.wait {
+		return a.waitInLine(ctx, room, project, repo, p, check, w.timeout, stderr)
 	}
 	return fail.New(fail.NoCapacity, "%s", capacityMessage(project, check)).WithHint(capacityHint)
+}
+
+// fitAfterRoom stops idle stacks when that makes the stack fit, and checks the budget again.
+func (a *app) fitAfterRoom(ctx context.Context, room *roomMaker, project, repo string, p *compose.Project, check budget.Check) (budget.Check, error) {
+	stopped, err := room.make(ctx, check)
+	if err != nil || !stopped {
+		return check, err
+	}
+	return a.fit(ctx, project, repo, p)
 }
 
 // queueInterval is how often a waiting up looks at the line and the budget again.
 const queueInterval = 2 * time.Second
 
 // waitInLine waits until this up is first in line and its stack fits, at most timeout.
-func (a *app) waitInLine(ctx context.Context, project, repo string, p *compose.Project, check budget.Check, timeout time.Duration, stderr io.Writer) error {
+func (a *app) waitInLine(ctx context.Context, room *roomMaker, project, repo string, p *compose.Project, check budget.Check, timeout time.Duration, stderr io.Writer) error {
 	line := queue.Open(a.opts.Home, a.opts.Alive)
 	start := a.opts.Clock.Now()
 	leave, err := line.Enter(queue.Entry{Project: project, PID: a.opts.PID, Estimate: check.Estimate, Since: start})
@@ -149,6 +163,11 @@ func (a *app) waitInLine(ctx context.Context, project, repo string, p *compose.P
 		if place == 1 {
 			if check, err = a.fit(ctx, project, repo, p); err != nil {
 				return err
+			}
+			if !check.Fits() && room.due() {
+				if check, err = a.fitAfterRoom(ctx, room, project, repo, p, check); err != nil {
+					return err
+				}
 			}
 			if check.Fits() {
 				return nil
