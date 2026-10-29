@@ -44,6 +44,8 @@ short, a few builds at a time, and with estimates learned from what stacks reall
 - `proxy`: `setup --builds` and the builds in the `Setup` document; `teardown --snapshots`.
 - `stack-list`: the queue in `ps` and in the `StackList` document.
 - `stack-gc`: gc never removes snapshots.
+- `stack-lifecycle`: `down` finds a stack by its volumes when only its data is left (a bug of
+  v0.1 found while testing this phase).
 
 ## Impact
 

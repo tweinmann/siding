@@ -37,6 +37,12 @@ func (s existing) ref(port int) stackRef {
 // whose containers carry this worktree and branch. Asking Docker rather than recomputing the
 // name keeps --repo, given once to up, out of every later command.
 func (a *app) findStack(ctx context.Context) (existing, error) {
+	return a.findStackOrData(ctx, false)
+}
+
+// findStackOrData is findStack, and with data also a stack of which only volumes are left (after
+// siding down), found by the labels on its volumes.
+func (a *app) findStackOrData(ctx context.Context, data bool) (existing, error) {
 	wt, err := a.opts.Git.Worktree(ctx, a.opts.Dir)
 	if err != nil {
 		return existing{}, err
@@ -47,6 +53,17 @@ func (a *app) findStack(ctx context.Context) (existing, error) {
 	cs, err := a.opts.Docker.Containers(ctx, map[string]string{stack.LabelWorktree: wt.Top, stack.LabelBranch: wt.Branch})
 	if err != nil {
 		return existing{}, err
+	}
+	if len(cs) == 0 && data {
+		vs, err := a.opts.Docker.Volumes(ctx, map[string]string{stack.LabelWorktree: wt.Top, stack.LabelBranch: wt.Branch})
+		if err != nil {
+			return existing{}, err
+		}
+		for _, v := range vs {
+			if p := v.Labels[stack.LabelProject]; p != "" {
+				return existing{wt: wt, id: stack.FromLabels(v.Labels), project: p}, nil
+			}
+		}
 	}
 	if len(cs) == 0 {
 		return existing{}, fail.New(fail.StackNotFound, "the worktree %s has no stack for the branch %s", wt.Top, wt.Branch).

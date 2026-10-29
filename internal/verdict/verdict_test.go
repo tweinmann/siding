@@ -129,6 +129,15 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
+func TestSeedFailed(t *testing.T) {
+	t.Parallel()
+	seed := &Failure{Service: "db", Reason: SeedFailed, Hint: "the seed command failed", Output: []string{"ERROR: relation exists"}}
+	res := Evaluate(Input{Services: []string{"db"}, Containers: []docker.Container{ct("db", "running", "healthy", 0)}, Seed: seed})
+	if res.Verdict != Failed || res.Failure != seed || len(res.Services) != 1 || !res.Services[0].Ready {
+		t.Errorf("%+v", res)
+	}
+}
+
 func TestHints(t *testing.T) {
 	t.Parallel()
 	res := Evaluate(Input{Services: []string{"db"}, Containers: []docker.Container{

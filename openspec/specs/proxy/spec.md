@@ -9,8 +9,8 @@ on the network `siding`, started by `siding setup` and bound to the loopback int
 ### Requirement: Setup starts the proxy
 `siding setup` SHALL create the network `siding` if it is missing and run the Compose project
 `siding` with one container `siding-proxy`: Traefik with the Docker provider on the network
-`siding`, restarting unless stopped. It SHALL print the proxy's address and budget, with
-`--json` as a `Setup` document.
+`siding`, restarting unless stopped. It SHALL print the proxy's address, budget and number of
+build slots, with `--json` as a `Setup` document.
 
 #### Scenario: First setup
 - **WHEN** `siding setup` runs on a machine without the proxy
@@ -18,7 +18,11 @@ on the network `siding`, started by `siding setup` and bound to the loopback int
 
 #### Scenario: JSON
 - **WHEN** `siding setup --json` runs
-- **THEN** it prints a `Setup` document with the proxy's container name, network, image, port and budget in bytes
+- **THEN** it prints a `Setup` document with the proxy's container name, network, image, port, budget in bytes and build slots
+
+#### Scenario: Build slots
+- **WHEN** `siding setup --builds 2` runs, and later `siding setup` without `--builds`
+- **THEN** `siding-proxy` carries `dev.siding.builds=2` after both
 
 ### Requirement: Loopback port
 The proxy SHALL publish exactly one port, on `127.0.0.1` only, `80` unless `--port <n>` names
@@ -85,9 +89,10 @@ proxy SHALL reach the machine siding runs on as `host.docker.internal`.
 
 ### Requirement: Teardown removes the proxy
 `siding teardown` SHALL remove `siding-proxy`, its files under `~/.siding/proxy/`, and the
-network `siding` unless a container still uses it. It MUST NOT touch any stack: running stacks
-keep running as plain Compose projects, and teardown names them. `--dry-run` removes nothing;
-with `--json` it prints a `Teardown` document.
+network `siding` unless a container still uses it, and with `--snapshots` also every snapshot of
+this machine. It MUST NOT touch any stack: running stacks keep running as plain Compose
+projects, and teardown names them. `--dry-run` removes nothing; with `--json` it prints a
+`Teardown` document.
 
 #### Scenario: Nothing runs but the proxy
 - **WHEN** `siding teardown` runs and no stack exists
@@ -104,3 +109,7 @@ with `--json` it prints a `Teardown` document.
 #### Scenario: No proxy
 - **WHEN** `siding teardown` runs on a machine without `siding-proxy`
 - **THEN** it reports that there is nothing to remove and exits 0
+
+#### Scenario: Snapshots
+- **WHEN** `siding teardown` runs without `--snapshots` and snapshots exist
+- **THEN** the snapshots stay and teardown names them; with `--snapshots` they are removed too

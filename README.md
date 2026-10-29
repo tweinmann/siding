@@ -3,8 +3,9 @@
 siding gives every git worktree its own Docker Compose stack, at its own `*.localhost` address,
 and tells you and your coding agents whether it actually runs and what it costs.
 
-> **Pre-alpha (v0.2).** Stacks per worktree, routing through one local proxy, the verdict of
-> `siding status`, the overview `siding ui`, a memory budget, `gc` and `lint` work; expect
+> **Pre-alpha (v0.3).** Stacks per worktree, routing through one local proxy, the verdict of
+> `siding status`, the overview `siding ui`, a memory budget with a queue and learned peaks,
+> snapshots and seeding, a build limit, `gc` and `lint` work; expect
 > rough edges and changes before v1. There are no releases
 > yet: build it from source (see below). The plan is in [openspec/changes/](openspec/changes)
 > (one change per phase), what siding does today in [openspec/specs/](openspec/specs).
@@ -22,8 +23,10 @@ siding teardown              # remove the proxy again; stacks keep running, --dr
 ```
 
 Every stack is reached through this one proxy at `http://<repo>.<branch>.localhost`. Browsers
-and curl resolve `*.localhost` to your machine by themselves; for other tools add the host to
-`/etc/hosts`. Running `siding setup` again changes nothing unless the port differs.
+resolve `*.localhost` to your machine by themselves, and so does curl on Linux. The curl of
+macOS does not: there, use `curl -H "Host: shop.feature-login.localhost" http://127.0.0.1/`, or
+add the host to `/etc/hosts`, as for other tools. Running `siding setup` again changes nothing
+unless the port differs.
 
 ### In a worktree: start the stack
 
@@ -79,6 +82,47 @@ siding lint                  # exits 1 when it finds an error; --json for a Lint
 | `PublishedPort` | info | published ports, which siding resets |
 | `NoRoot` | info | HTTP services, but none at `/` |
 
+### Snapshots
+
+```sh
+siding snapshot save base    # copy this stack's named volumes into the snapshot "base"
+siding snapshot ls           # the snapshots of this repository
+siding snapshot rm base      # --dry-run lists it first
+```
+
+A snapshot is a copy of every named volume of a stack, kept as Docker volumes on this machine
+per repository. While it copies, `save` stops the services that use those volumes, so a
+database is copied in a consistent state, and starts them again. Snapshots outlive stacks:
+`down --volumes` and `gc` never remove them; `siding teardown --snapshots` does.
+
+### Seeding a new stack
+
+```sh
+siding up --seed base        # on the stack's first up: its volumes start as copies of "base"
+```
+
+A new worktree's stack can start with data instead of empty. On its first `up` (the project
+has no containers and no volumes yet), `--seed <snapshot>` creates its volumes as copies of the
+snapshot before Compose starts it; a later `up` never seeds again. Per service, the label
+`dev.siding.seed` chooses:
+
+```yaml
+services:
+  db:
+    image: postgres:17
+    labels:
+      dev.siding.seed: script                       # run a command once on the first up
+      dev.siding.seed.command: "psql -U app -f /seed/dev.sql"
+  cache:
+    image: redis:7
+    labels:
+      dev.siding.seed: none                         # never seeded, starts empty
+  # without the label, or with dev.siding.seed: volume, the volumes come from --seed
+```
+
+The seed command runs with `docker compose exec` as soon as the service is ready. If it fails,
+the verdict is `Failed` with the reason `SeedFailed` and the command's output.
+
 ### Memory budget
 
 ```sh
@@ -87,9 +131,16 @@ siding up --force                # start even if the stack does not fit
 ```
 
 Before `up` starts a stack, siding adds the memory the other stacks use now to what this
-stack will need: per service its `mem_limit` (or `deploy.resources.limits.memory`), or
-256 MiB without a limit. If that exceeds the budget, `up` refuses with exit code 3 and says
-how much is missing. Setting `mem_limit` on big services makes the estimate right. `siding ps`
+stack will need: per service the highest use siding has seen for it in this repository, plus a
+quarter and at most its limit; else its `mem_limit` (or `deploy.resources.limits.memory`); else
+256 MiB. siding learns those peaks whenever it reads memory (`ps`, `ui`, `up`, a Ready `status`)
+and keeps them in `~/.siding/peaks.json`, a cache you can delete at any time. If that exceeds the budget, `up` refuses with exit code 3 and says
+how much is missing. Setting `mem_limit` on big services makes the estimate right.
+
+With `siding up --wait`, a stack that does not fit waits in line instead, until another stack
+frees memory or `--timeout` (3 minutes) is up; then it exits 3. Stacks start in the order they
+began to wait. `siding ps` and `siding ui` show the line. A waiting `up` that you stop with
+Ctrl-C, or that is killed, leaves the line. `siding ps`
 shows the total against the budget.
 
 ### Overview
@@ -103,6 +154,17 @@ The page lists every stack with its address and memory, the total against the bu
 return the documents of `siding ps --json` and `siding gc --dry-run --json`. It listens on this
 machine only, and nothing of it keeps running after Ctrl-C. After upgrading siding, run
 `siding setup` once, so the proxy knows the route.
+
+### Builds
+
+```sh
+siding setup --builds 2      # at most two stacks build images at once; "default" is half the CPUs
+```
+
+When a stack has services with `build:`, `up` takes one of these build slots while Compose
+builds and starts it, and waits for a free one first (within `--timeout`). Stacks of images
+only never wait. The slots are lock files under `~/.siding/builds`; a stopped or killed `up`
+frees its slot at once.
 
 ### Logs, address, and taking it down
 

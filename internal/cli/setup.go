@@ -42,20 +42,21 @@ when something differs.`,
 				return printJSON(cmd.OutOrStdout(), doc)
 			}
 			verb := map[string]string{"created": "started", "updated": "restarted", "unchanged": "already runs"}[doc.State]
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s, memory budget %s\n", doc.Container, verb,
-				address("*.localhost", doc.Port, "/"), bytesText(uint64(doc.BudgetBytes)))
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s, memory budget %s, %d build slots\n", doc.Container, verb,
+				address("*.localhost", doc.Port, "/"), bytesText(uint64(doc.BudgetBytes)), doc.Builds)
 			return err
 		},
 	}
 	cmd.Flags().IntVar(&f.port, "port", 0, "port on 127.0.0.1 for the proxy (default: the running proxy's, else 80)")
+	cmd.Flags().StringVar(&f.builds, "builds", "", "how many stacks may build images at once; \"default\" for half of Docker's CPUs (default: the number set before)")
 	cmd.Flags().StringVar(&f.budget, "budget", "", "memory budget for all stacks, e.g. 12g; \"default\" for 75% of Docker's memory (default: the budget set before)")
 	registerJSON(cmd, &asJSON)
 	return cmd
 }
 
 type setupFlags struct {
-	port   int
-	budget string
+	port           int
+	budget, builds string
 }
 
 func (a *app) setup(cmd *cobra.Command, f setupFlags) (setupDocument, error) {
@@ -88,6 +89,18 @@ func (a *app) setup(cmd *cobra.Command, f setupFlags) (setupDocument, error) {
 	default:
 		if settings.Budget, err = budget.ParseSize(f.budget); err != nil {
 			return setupDocument{}, fail.New(fail.InvalidArguments, "--budget %q: %v", f.budget, err)
+		}
+	}
+
+	switch f.builds {
+	case "":
+		if current != nil {
+			settings.Builds, _ = strconv.Atoi(current.Labels[stack.LabelBuilds])
+		}
+	case "default":
+	default:
+		if settings.Builds, err = strconv.Atoi(f.builds); err != nil || settings.Builds < 1 {
+			return setupDocument{}, fail.New(fail.InvalidArguments, "--builds must be a number of at least 1 or \"default\", got %q", f.builds)
 		}
 	}
 
@@ -135,7 +148,24 @@ func (a *app) setup(cmd *cobra.Command, f setupFlags) (setupDocument, error) {
 	if doc.BudgetBytes, err = a.budget(ctx, after); err != nil {
 		return setupDocument{}, err
 	}
+	if doc.Builds, err = a.builds(ctx, after); err != nil {
+		return setupDocument{}, err
+	}
 	return doc, nil
+}
+
+// builds is the number of build slots: the proxy's label, else half of Docker's CPUs, at least 1.
+func (a *app) builds(ctx context.Context, proxyContainer *docker.Container) (int, error) {
+	if proxyContainer != nil {
+		if n, err := strconv.Atoi(proxyContainer.Labels[stack.LabelBuilds]); err == nil && n > 0 {
+			return n, nil
+		}
+	}
+	cpus, err := a.opts.Docker.NCPU(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return max(1, cpus/2), nil
 }
 
 // hostPort is the port on the host a proxy container publishes, or 0.

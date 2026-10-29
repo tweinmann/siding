@@ -23,7 +23,9 @@ context: |
 
   Status: pre-alpha. Phase 0 (repository, devcontainer, OpenSpec, CI) and Phase 1 (v0.1:
   stacks per worktree, routing through siding-proxy, the verdict of status) are done; Phase 2
-  (v0.2: the overview siding ui, the memory budget, gc, lint, teardown) is done. OpenSpec is the only planning source: `openspec/specs/` is what siding
+  (v0.2: the overview siding ui, the memory budget, gc, lint, teardown) is done; Phase 3
+  (v0.3: snapshots and seeding, the start queue, the build limit, learned peaks) is done.
+  OpenSpec is the only planning source: `openspec/specs/` is what siding
   does today, `openspec/changes/` what it is about to do (the roadmap is the
   `phase-<n>-<slug>` changes), `openspec/changes/archive/` how it got here. CLAUDE.md holds the
   working agreements, guardrails, safety rules and conventions in full; read it before
@@ -87,9 +89,11 @@ context: |
     `dev.siding.agent` (optional), never on networks or volumes, whose labels must not change
     between two `up`s, since Compose recreates a network whose labels changed. Service labels:
     `dev.siding.route` (`/`, `/<path>`, `false`), `dev.siding.port` (the HTTP port of a
-    service with several), `dev.siding.seed` (`volume|script|none`). Volume label
-    `dev.siding.shared`. On `siding-proxy`: `dev.siding.budget` (bytes) and
-    `dev.siding.host-alias` (what `host.docker.internal` resolves to). The machine and
+    service with several), `dev.siding.seed` (`volume|script|none`), `dev.siding.seed.command`.
+    Volume label `dev.siding.shared`. Snapshot volumes: `dev.siding.snapshot`,
+    `dev.siding.snapshot-volume`, `dev.siding.snapshot-created`. On `siding-proxy`:
+    `dev.siding.budget` (bytes), `dev.siding.builds` (build slots) and `dev.siding.host-alias`
+    (what `host.docker.internal` resolves to). The machine and
     worktree labels exist from v0.1 so that remote hosts need no migration later.
   - Development and every test run in a devcontainer with its own Docker daemon
     (Docker-in-Docker); see the spec `dev-environment`. There is no Docker-outside-of-Docker

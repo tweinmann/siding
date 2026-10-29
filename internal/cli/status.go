@@ -62,7 +62,7 @@ Exit codes: 0 Ready, 1 Failed, 2 TimedOut (or Starting without --wait).`,
 			if err != nil {
 				return err
 			}
-			doc, err := a.status(ctx, st, p, port, w)
+			doc, err := a.status(ctx, st, p, port, w, nil)
 			if err != nil {
 				return err
 			}
@@ -76,7 +76,9 @@ Exit codes: 0 Ready, 1 Failed, 2 TimedOut (or Starting without --wait).`,
 }
 
 // status evaluates the stack once, or until it is Ready or Failed or the time is up.
-func (a *app) status(ctx context.Context, st existing, p *compose.Project, port int, w waitFlags) (statusDocument, error) {
+// seedFailure, when set, is a failed seed command of the up that called status; it decides the
+// verdict.
+func (a *app) status(ctx context.Context, st existing, p *compose.Project, port int, w waitFlags, seedFailure *verdict.Failure) (statusDocument, error) {
 	routes, _, err := stack.Routes(p)
 	if err != nil {
 		return statusDocument{}, err
@@ -104,9 +106,12 @@ func (a *app) status(ctx context.Context, st existing, p *compose.Project, port 
 		final := w.wait && a.opts.Clock.Now().Sub(start) >= w.timeout
 		res := verdict.Evaluate(verdict.Input{
 			Services: p.ServiceNames(), Containers: cs, Routes: routed, Answering: answering,
-			RestartBase: base, Final: final, Timeout: w.timeout,
+			RestartBase: base, Final: final, Timeout: w.timeout, Seed: seedFailure,
 		})
 		if !w.wait || final || res.Verdict == verdict.Ready || res.Verdict == verdict.Failed {
+			if res.Verdict == verdict.Ready {
+				_, _ = a.memory(ctx, cs) // learns this stack's peaks (design D7)
+			}
 			return a.statusDocument(ctx, st, p, routes, port, cs, res)
 		}
 		if err := a.opts.Clock.Sleep(ctx, pollInterval); err != nil {
@@ -147,12 +152,14 @@ func (a *app) statusDocument(ctx context.Context, st existing, p *compose.Projec
 	}
 	if f := res.Failure; f != nil {
 		doc.Failure = &failureDocument{Service: f.Service, Reason: f.Reason, Hint: f.Hint}
-		if containers := byService(cs)[f.Service]; len(containers) > 0 {
+		r, err := redactor(st.wt.Top, p)
+		if err != nil {
+			return statusDocument{}, err
+		}
+		if f.Output != nil {
+			doc.Failure.Logs = r.Lines(f.Output)
+		} else if containers := byService(cs)[f.Service]; len(containers) > 0 {
 			lines, err := a.opts.Docker.Logs(ctx, failing(containers).ID, logTail)
-			if err != nil {
-				return statusDocument{}, err
-			}
-			r, err := redactor(st.wt.Top, p)
 			if err != nil {
 				return statusDocument{}, err
 			}

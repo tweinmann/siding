@@ -31,7 +31,7 @@ moved past it, or its upstream branch is gone (deleted after a merge, a squash m
 `siding gc` SHALL consider the stacks of this machine and remove: for a merged branch, the
 stack's containers, networks and volumes (reason `Merged`); for a stack whose worktree no
 longer exists, its containers and networks, and its volumes only if the branch is merged
-(reason `WorktreeGone`). It MUST NOT touch git worktrees or branches.
+(reason `WorktreeGone`). It MUST NOT touch git worktrees, branches or snapshots.
 
 #### Scenario: A deleted worktree with an unmerged branch
 - **WHEN** the worktree of `feature/wip` was deleted, but the branch has commits `main` lacks
@@ -48,6 +48,10 @@ longer exists, its containers and networks, and its volumes only if the branch i
 #### Scenario: Worktrees stay
 - **WHEN** gc removes the stack of a merged branch
 - **THEN** the worktree directory and the branch still exist
+
+#### Scenario: Snapshots stay
+- **WHEN** gc removes the stack of a merged branch from which the snapshot `base` was saved
+- **THEN** `base` still exists
 
 ### Requirement: Ask before removing
 `siding gc` SHALL list what it would remove and ask before removing it. `--yes` removes without

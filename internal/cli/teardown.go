@@ -17,7 +17,7 @@ import (
 )
 
 func newTeardownCommand(a *app) *cobra.Command {
-	var asJSON, dryRun bool
+	var asJSON, dryRun, snapshots bool
 	cmd := &cobra.Command{
 		Use:   "teardown",
 		Short: "Remove siding-proxy and its network; stacks keep running",
@@ -26,7 +26,7 @@ network "siding" unless a stack still uses it. Stacks are never touched: they ke
 plain Compose projects, without the proxy. Remove them first with siding down or siding gc.`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			doc, err := a.teardown(cmd, dryRun)
+			doc, err := a.teardown(cmd, dryRun, snapshots)
 			if err != nil {
 				return err
 			}
@@ -37,11 +37,12 @@ plain Compose projects, without the proxy. Remove them first with siding down or
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "list what would be removed, remove nothing")
+	cmd.Flags().BoolVar(&snapshots, "snapshots", false, "also remove every snapshot of this machine")
 	registerJSON(cmd, &asJSON)
 	return cmd
 }
 
-func (a *app) teardown(cmd *cobra.Command, dryRun bool) (teardownDocument, error) {
+func (a *app) teardown(cmd *cobra.Command, dryRun, withSnapshots bool) (teardownDocument, error) {
 	ctx := cmd.Context()
 	cfg := a.opts.Proxy
 	doc := teardownDocument{header: newHeader(kindTeardown), DryRun: dryRun}
@@ -76,8 +77,28 @@ func (a *app) teardown(cmd *cobra.Command, dryRun bool) (teardownDocument, error
 	case exists:
 		doc.KeptNetwork = cfg.Network
 	}
+	snaps, err := a.snapshots(ctx, false)
+	if err != nil {
+		return doc, err
+	}
+	for _, s := range snaps {
+		if withSnapshots {
+			doc.Snapshots = append(doc.Snapshots, s.String())
+		} else {
+			doc.KeptSnapshots = append(doc.KeptSnapshots, s.String())
+		}
+	}
 	if dryRun {
 		return doc, nil
+	}
+	if withSnapshots {
+		for _, s := range snaps {
+			for _, v := range s.Volumes {
+				if err := a.opts.Docker.RemoveVolume(ctx, v); err != nil {
+					return doc, err
+				}
+			}
+		}
 	}
 
 	dir := filepath.Join(a.opts.Home, ".siding", "proxy", cfg.Project)
@@ -107,7 +128,7 @@ func printTeardownText(cmd *cobra.Command, doc teardownDocument) error {
 	if doc.DryRun {
 		verb = "Would remove"
 	}
-	if doc.Container == "" && doc.Network == "" {
+	if doc.Container == "" && doc.Network == "" && len(doc.Snapshots) == 0 {
 		b.WriteString("Nothing to remove: siding-proxy does not run here.\n")
 	}
 	if doc.Container != "" {
@@ -121,6 +142,12 @@ func printTeardownText(cmd *cobra.Command, doc teardownDocument) error {
 	}
 	if len(doc.Stacks) > 0 {
 		fmt.Fprintf(&b, "These stacks keep running, without the proxy: %s\nRemove them with siding down in their worktree, or siding gc.\n", strings.Join(doc.Stacks, ", "))
+	}
+	if len(doc.Snapshots) > 0 {
+		fmt.Fprintf(&b, "%s the snapshots %s\n", verb, strings.Join(doc.Snapshots, ", "))
+	}
+	if len(doc.KeptSnapshots) > 0 {
+		fmt.Fprintf(&b, "Kept the snapshots %s; siding teardown --snapshots removes them.\n", strings.Join(doc.KeptSnapshots, ", "))
 	}
 	if doc.DryRun {
 		b.WriteString("Dry run: nothing was removed.\n")

@@ -39,6 +39,8 @@ type Settings struct {
 	Machine string
 	// Budget is the memory budget in bytes, 0 for the default.
 	Budget int64
+	// Builds is the number of build slots, 0 for the default.
+	Builds int
 	// RoutesDir is the directory on this machine with the route files of siding ui.
 	RoutesDir string
 	// HostAlias is what host.docker.internal resolves to in the proxy: the proxy network's
@@ -54,6 +56,9 @@ func ComposeFile(c Config, s Settings) []byte {
 	labels := fmt.Sprintf("      dev.siding.machine: %q\n      dev.siding.host-alias: %q\n", s.Machine, s.HostAlias)
 	if s.Budget > 0 {
 		labels += fmt.Sprintf("      dev.siding.budget: \"%d\"\n", s.Budget)
+	}
+	if s.Builds > 0 {
+		labels += fmt.Sprintf("      dev.siding.builds: \"%d\"\n", s.Builds)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, `# Written by siding setup. Do not edit: siding setup rewrites it.

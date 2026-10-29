@@ -73,6 +73,8 @@ type Service struct {
 	ContainerName string
 	// Binds are the absolute host paths of the service's bind mounts.
 	Binds []string
+	// Volumes are the keys of the named volumes the service mounts.
+	Volumes []string
 	// Healthcheck is set when the compose file gives the service a healthcheck. One from the
 	// image is not visible here.
 	Healthcheck bool
@@ -80,6 +82,8 @@ type Service struct {
 	MemoryLimit int64
 	// Replicas is deploy.replicas, else scale, else 1.
 	Replicas int
+	// Build is set when the service is built from a Dockerfile.
+	Build bool
 }
 
 // Resource is a top-level network or volume.
@@ -102,7 +106,8 @@ type rawService struct {
 		Published string `json:"published"`
 		Protocol  string `json:"protocol"`
 	} `json:"ports"`
-	ContainerName string `json:"container_name"`
+	ContainerName string          `json:"container_name"`
+	Build         json.RawMessage `json:"build"`
 	Volumes       []struct {
 		Type   string `json:"type"`
 		Source string `json:"source"`
@@ -143,7 +148,7 @@ func ParseConfig(data []byte) (*Project, error) {
 	p := &Project{Name: raw.Name, Services: map[string]Service{}, Networks: map[string]Resource{}, Volumes: map[string]Resource{}}
 	for name, rs := range raw.Services {
 		s := Service{Labels: rs.Labels, NetworkMode: rs.NetworkMode, Environment: map[string]string{},
-			ContainerName: rs.ContainerName, Replicas: 1}
+			ContainerName: rs.ContainerName, Replicas: 1, Build: len(rs.Build) > 0 && string(rs.Build) != "null"}
 		if s.Labels == nil {
 			s.Labels = map[string]string{}
 		}
@@ -157,8 +162,13 @@ func ParseConfig(data []byte) (*Project, error) {
 			}
 		}
 		for _, v := range rs.Volumes {
-			if v.Type == "bind" {
+			switch v.Type {
+			case "bind":
 				s.Binds = append(s.Binds, v.Source)
+			case "volume":
+				if v.Source != "" {
+					s.Volumes = append(s.Volumes, v.Source)
+				}
 			}
 		}
 		if h := rs.Healthcheck; h != nil && !h.Disable && len(h.Test) > 0 && h.Test[0] != "NONE" {

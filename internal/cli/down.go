@@ -36,7 +36,7 @@ default branch or the worktree has uncommitted changes, unless --force.`,
 			if asJSON {
 				return printJSON(cmd.OutOrStdout(), doc)
 			}
-			return printDownText(cmd, doc, f.volumes)
+			return printDownText(cmd, doc)
 		},
 	}
 	cmd.Flags().BoolVar(&f.volumes, "volumes", false, "also remove the stack's volumes and their data")
@@ -48,7 +48,7 @@ default branch or the worktree has uncommitted changes, unless --force.`,
 
 func (a *app) down(cmd *cobra.Command, f downFlags) (downDocument, error) {
 	ctx := cmd.Context()
-	st, err := a.findStack(ctx)
+	st, err := a.findStackOrData(ctx, true)
 	if err != nil {
 		return downDocument{}, err
 	}
@@ -119,14 +119,16 @@ func (a *app) downPlan(ctx context.Context, st existing, f downFlags) (downDocum
 	for _, n := range ns {
 		doc.Networks = append(doc.Networks, n.Name)
 	}
-	if f.volumes {
-		vs, err := a.opts.Docker.Volumes(ctx, byProject)
-		if err != nil {
-			return doc, err
-		}
-		for _, v := range vs {
-			doc.Volumes = append(doc.Volumes, v.Name)
-		}
+	vs, err := a.opts.Docker.Volumes(ctx, byProject)
+	if err != nil {
+		return doc, err
+	}
+	if !f.volumes {
+		doc.keptVolumes = len(vs)
+		vs = nil
+	}
+	for _, v := range vs {
+		doc.Volumes = append(doc.Volumes, v.Name)
 	}
 	sort.Strings(doc.Containers)
 	sort.Strings(doc.Networks)
@@ -134,7 +136,7 @@ func (a *app) downPlan(ctx context.Context, st existing, f downFlags) (downDocum
 	return doc, nil
 }
 
-func printDownText(cmd *cobra.Command, doc downDocument, volumes bool) error {
+func printDownText(cmd *cobra.Command, doc downDocument) error {
 	var b strings.Builder
 	verb := "Removed"
 	if doc.DryRun {
@@ -149,7 +151,7 @@ func printDownText(cmd *cobra.Command, doc downDocument, volumes bool) error {
 			fmt.Fprintf(&b, "  %s %s\n", list.kind, n)
 		}
 	}
-	if !volumes {
+	if doc.keptVolumes > 0 {
 		b.WriteString("Volumes stay; siding down --volumes removes them.\n")
 	}
 	if doc.DryRun {

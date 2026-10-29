@@ -30,7 +30,12 @@ is the database, no background service, never lose work, the compose file is nev
 
 ### D1. Snapshots are Docker volumes (maintainer's decision)
 A snapshot of repository `<repo>` named `<name>` is one volume per own named volume of the
-stack, `siding-snap-<repo-slug>-<name>-<volume-key-slug>`, labelled `dev.siding.snapshot=<name>`,
+stack, `siding-snap_<repo-slug>_<name>_<volume-key-slug>` (with `_`, which neither slugs nor
+snapshot names contain, so repository `a-b` with snapshot `c` and repository `a` with snapshot
+`b-c` never share a volume; and siding creates a volume only after checking that the name is
+free, because Docker's volume create silently returns an existing volume of that name, and a
+snapshot would then write into another machine's or another snapshot's data, as the end-to-end
+test showed with two machines on one daemon), labelled `dev.siding.snapshot=<name>`,
 `dev.siding.snapshot-volume=<key>`, `dev.siding.repo`, `dev.siding.machine`, and the time in
 `dev.siding.snapshot-created`. Copies run in a short-lived helper container from the image
 pinned in the binary (`busybox:1.37.0`, the devcontainer's `SIDING_BUSYBOX_IMAGE`) with

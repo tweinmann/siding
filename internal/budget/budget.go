@@ -45,23 +45,9 @@ func ParseSize(s string) (int64, error) {
 	return n << shift, nil
 }
 
-// Estimate is the memory a project will need: per service and replica its memory limit, or
-// ServiceDefault without one.
-func Estimate(p *compose.Project) int64 {
-	var sum int64
-	for _, s := range p.Services {
-		per := s.MemoryLimit
-		if per <= 0 {
-			per = ServiceDefault
-		}
-		replicas := s.Replicas
-		if replicas < 1 {
-			replicas = 1
-		}
-		sum += per * int64(replicas)
-	}
-	return sum
-}
+// Estimate is the memory a project will need without learned peaks: per service and replica its
+// memory limit, or ServiceDefault without one.
+func Estimate(p *compose.Project) int64 { return EstimateLearned(p, "", nil) }
 
 // Check is the outcome of fitting a stack into the budget.
 type Check struct {

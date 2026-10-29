@@ -16,11 +16,13 @@ changing architecture.
 
 Phase 0 approved (2026-10-28). Phase 1 (v0.1) and Phase 2 (v0.2) approved and archived
 (2026-10-28, `openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing` and
-`…-phase-2-overview-and-budget`). siding today: `setup [--port] [--budget]`, `teardown`,
-`up [--wait] [--force]`, `status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`, `gc`,
-`lint`, `ui`, `skill`; routing by host and path through `siding-proxy`; a memory budget;
-`just smoke-stacks`, `just build-darwin`. Next: Phase 3 (`phase-3-snapshots-and-queue`, v0.3),
-starting with `/opsx:propose`.
+`…-phase-2-overview-and-budget`). Phase 3 (v0.3) approved and archived (2026-10-29,
+`…/2026-10-29-phase-3-snapshots-and-queue`). siding today: `setup [--port] [--budget]
+[--builds]`, `teardown [--snapshots]`, `up [--wait] [--force] [--seed]`, `status [--wait]`,
+`ps`, `logs`, `open`, `down [--volumes]`, `snapshot save|ls|rm`, `gc`, `lint`, `ui`, `skill`;
+routing by host and path through `siding-proxy`; a memory budget with a start queue and learned
+peaks; build slots; `just smoke-stacks`, `just build-darwin`. Next: Phase 4
+(`phase-4-idle-and-wake`, v0.4), starting with `/opsx:propose`.
 
 ## Working agreements
 
@@ -112,7 +114,8 @@ requests and on `main`, all inside the devcontainer image.
   `siding`, the user's stacks, `~/.siding`) is not development footprint. `hack/nuke.sh` never
   removes it; siding's own commands and `docker compose -p siding down` do.
 - Tests create stacks only as Compose projects with the prefix `siding-test-` and remove them by
-  their exact name. The smoke tests' proxies listen on 18080, never on 8080; the end-to-end
+  their exact name. Their snapshots are therefore named `siding-snap_siding-test-…` and are
+  removed by exact name too; `just smoke-stacks` checks that none of either is left. The smoke tests' proxies listen on 18080, never on 8080; the end-to-end
   tests run their own proxy `siding-test-e2e-proxy` on the network `siding-test-e2e`, so a
   developer's `siding-proxy` is never touched.
 - No real secrets in the repo, in golden files or in logs; golden files may contain obvious
@@ -132,8 +135,11 @@ requests and on `main`, all inside the devcontainer image.
   and `dev.siding.agent` (optional), never on networks or volumes, whose labels must not change
   between two `up`s. Service labels: `dev.siding.route` (`/`, `/<path>`, `false`),
   `dev.siding.port` (the HTTP port of a service with several), `dev.siding.seed`
-  (`volume|script|none`). Volume label `dev.siding.shared`. On `siding-proxy`:
-  `dev.siding.budget` (the memory budget in bytes) and `dev.siding.host-alias` (what
+  (`volume|script|none`), `dev.siding.seed.command` (the seed command of `script`). Volume
+  label `dev.siding.shared`. Snapshot volumes: `dev.siding.snapshot` (name),
+  `dev.siding.snapshot-volume` (the stack's volume key), `dev.siding.snapshot-created`, plus
+  `dev.siding.repo` and `dev.siding.machine`. On `siding-proxy`: `dev.siding.budget` (the memory
+  budget in bytes), `dev.siding.builds` (build slots) and `dev.siding.host-alias` (what
   `host.docker.internal` resolves to in the proxy).
 - Compose project `<repo>-<branch-slug>`, host `<repo>.<branch-slug>.localhost`, proxy
   `siding-proxy` on the network `siding`, override `.siding/override.yml`.

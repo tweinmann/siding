@@ -78,3 +78,25 @@ func TestTeardown(t *testing.T) {
 		}
 	})
 }
+
+func TestTeardownSnapshots(t *testing.T) {
+	t.Parallel()
+	e := snapshotEnv(t)
+	setupDoc(t, e)
+	code, stdout, _ := e.run("teardown", "--dry-run")
+	if code != exitOK || !strings.Contains(stdout, "Kept the snapshots blog/base, shop/base, shop/big; siding teardown --snapshots removes them.") {
+		t.Errorf("without --snapshots: exit %d\n%s", code, stdout)
+	}
+	if code, _, _ := e.run("teardown", "--snapshots"); code != exitOK {
+		t.Fatal("teardown --snapshots failed")
+	}
+	var removed []string
+	for _, c := range e.docker.calls {
+		removed = append(removed, strings.TrimPrefix(c, "remove "))
+	}
+	slices.Sort(removed)
+	want := []string{"siding-snap_blog_base_data", "siding-snap_shop_base_data", "siding-snap_shop_base_uploads", "siding-snap_shop_big_data"}
+	if !slices.Equal(removed, want) {
+		t.Errorf("removed %q, want %q (the other machine's snapshot stays)", removed, want)
+	}
+}

@@ -1,0 +1,25 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "SnapshotList",
+  "snapshots": [
+    {
+      "name": "base",
+      "repo": "shop",
+      "created": "2026-10-28T12:00:00Z",
+      "volumes": [
+        "data",
+        "uploads"
+      ],
+      "sizeBytes": 2097152
+    },
+    {
+      "name": "big",
+      "repo": "shop",
+      "created": "2026-10-28T12:00:00Z",
+      "volumes": [
+        "data"
+      ],
+      "sizeBytes": 1048576
+    }
+  ]
+}

@@ -62,3 +62,17 @@ func TestMemoryUsage(t *testing.T) {
 		}
 	}
 }
+
+func TestHelperOptions(t *testing.T) {
+	t.Parallel()
+	h := Helper{Image: "busybox:1.37.0", Binds: []string{"shop-main_data:/from:ro", "siding-snap-shop-base-data:/to"},
+		Cmd: []string{"cp", "-a", "/from/.", "/to/"}, Labels: map[string]string{"dev.siding.machine": "m"}}
+	o := helperOptions(h)
+	if o.Config.Image != h.Image || !reflect.DeepEqual(o.Config.Cmd, h.Cmd) || !reflect.DeepEqual(o.Config.Labels, h.Labels) {
+		t.Errorf("config %+v", o.Config)
+	}
+	// No network: a copy needs none, and nothing in it can reach out.
+	if !reflect.DeepEqual(o.HostConfig.Binds, h.Binds) || o.HostConfig.NetworkMode != "none" {
+		t.Errorf("host config %+v", o.HostConfig)
+	}
+}

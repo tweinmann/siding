@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,7 +33,8 @@ const testConfig = `{
   "services": {
     "api": {"expose": ["8080", "9229"], "labels": {"dev.siding.route": "/api", "dev.siding.port": "8080"},
             "networks": {"default": null}, "environment": {"API_TOKEN": "not-a-real-api-token"}},
-    "db": {"networks": {"default": null}, "environment": {"POSTGRES_PASSWORD": "not-a-real-token"}},
+    "db": {"networks": {"default": null}, "environment": {"POSTGRES_PASSWORD": "not-a-real-token"},
+           "volumes": [{"type": "volume", "source": "data", "target": "/var/lib/data"}]},
     "mail": {"expose": ["8025"], "networks": {"default": null}},
     "web": {"ports": [{"target": 3000, "published": "3000", "protocol": "tcp"}], "labels": {"dev.siding.route": "/"},
             "networks": {"default": null}}
@@ -54,6 +56,8 @@ type env struct {
 	browser *fakeBrowser
 	clock   *fakeClock
 	envVars map[string]string
+	// dead are the pids the queue sees as gone.
+	dead map[int]bool
 }
 
 func newEnv(t *testing.T) *env {
@@ -73,6 +77,7 @@ func newEnv(t *testing.T) *env {
 		browser: &fakeBrowser{},
 		clock:   &fakeClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)},
 		envVars: map[string]string{},
+		dead:    map[int]bool{},
 	}
 	if err := os.MkdirAll(e.repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -90,6 +95,8 @@ func newEnv(t *testing.T) *env {
 		OSMachineID: func() string { return "not-a-real-machine-id" },
 		Stdin:       strings.NewReader(""),
 		IsTerminal:  func() bool { return false },
+		PID:         4242,
+		Alive:       func(pid int) bool { return !e.dead[pid] },
 		// The daemon runs on this machine, as in the devcontainer.
 		IsLocalAddress: func(ip string) bool { return ip == "172.19.0.1" },
 		Git:            git.Client{},
@@ -106,6 +113,7 @@ func newEnv(t *testing.T) *env {
 
 var publishedPort = regexp.MustCompile(`"127\.0\.0\.1:(\d+):80"`)
 var budgetLabel = regexp.MustCompile(`dev\.siding\.budget: "(\d+)"`)
+var buildsLabel = regexp.MustCompile(`dev\.siding\.builds: "(\d+)"`)
 var hostAliasLabel = regexp.MustCompile(`dev\.siding\.host-alias: "([^"]+)"`)
 
 // composeProxy does what docker compose up does for the proxy's project: it recreates the
@@ -134,6 +142,9 @@ func (e *env) composeProxy(r composeRun) {
 	labels := map[string]string{}
 	if m := budgetLabel.FindStringSubmatch(string(data)); m != nil {
 		labels[stack.LabelBudget] = m[1]
+	}
+	if m := buildsLabel.FindStringSubmatch(string(data)); m != nil {
+		labels[stack.LabelBuilds] = m[1]
 	}
 	if m := hostAliasLabel.FindStringSubmatch(string(data)); m != nil {
 		labels[stack.LabelHostAlias] = m[1]
@@ -219,12 +230,15 @@ type fakeDocker struct {
 	// container.
 	sidingNetwork   bool
 	removedNetworks []string
-	containers      []docker.Container
-	networks        []docker.Network
-	volumes         []docker.Volume
-	logs            map[string][]string
-	memory          map[string]uint64
-	ensured         []string
+	// calls records volume and helper calls in order; helperExit is the exit of every copy.
+	calls      []string
+	helperExit int
+	containers []docker.Container
+	networks   []docker.Network
+	volumes    []docker.Volume
+	logs       map[string][]string
+	memory     map[string]uint64
+	ensured    []string
 }
 
 func (d *fakeDocker) add(c docker.Container) {
@@ -344,6 +358,47 @@ func (d *fakeDocker) RemoveNetwork(_ context.Context, name string) error {
 	return nil
 }
 
+func (d *fakeDocker) NCPU(context.Context) (int, error) { return 8, nil }
+
+func (d *fakeDocker) CreateVolume(_ context.Context, name string, labels map[string]string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.volumes = append(d.volumes, docker.Volume{Name: name, Labels: maps.Clone(labels)})
+	d.calls = append(d.calls, "create "+name)
+	return nil
+}
+
+func (d *fakeDocker) RemoveVolume(_ context.Context, name string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.volumes = slices.DeleteFunc(d.volumes, func(v docker.Volume) bool { return v.Name == name })
+	d.calls = append(d.calls, "remove "+name)
+	return nil
+}
+
+func (d *fakeDocker) VolumeSizes(context.Context) (map[string]int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	sizes := map[string]int64{}
+	for _, v := range d.volumes {
+		sizes[v.Name] = 1 << 20
+	}
+	return sizes, nil
+}
+
+// RunHelper records a copy as "copy <from> <to>"; helperExit fails the next copies.
+func (d *fakeDocker) RunHelper(_ context.Context, h docker.Helper) (int, []string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	from, _, _ := strings.Cut(h.Binds[0], ":")
+	to, _, _ := strings.Cut(h.Binds[1], ":")
+	d.calls = append(d.calls, "copy "+from+" "+to)
+	if d.helperExit != 0 {
+		return d.helperExit, []string{"cp: write error: No space left on device"}, nil
+	}
+	return 0, nil, nil
+}
+
 func (d *fakeDocker) Logs(_ context.Context, id string, tail int) ([]string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -370,6 +425,9 @@ type fakeCompose struct {
 	config string
 	runs   []composeRun
 	runErr error
+	// execErr fails runs of docker compose exec, after writing execOutput.
+	execErr    error
+	execOutput string
 	// onRun, if set, runs after each recorded run, e.g. to start containers; onProxy instead
 	// for runs of the proxy's project.
 	onRun, onProxy func(composeRun)
@@ -379,11 +437,15 @@ func (c *fakeCompose) Config(context.Context, compose.Invocation) ([]byte, error
 	return []byte(c.config), nil
 }
 
-func (c *fakeCompose) Run(_ context.Context, inv compose.Invocation, args []string, _, _ io.Writer) error {
+func (c *fakeCompose) Run(_ context.Context, inv compose.Invocation, args []string, stdout, _ io.Writer) error {
 	c.mu.Lock()
 	r := composeRun{inv: inv, args: args}
 	c.runs = append(c.runs, r)
 	onRun, err := c.onRun, c.runErr
+	if args[0] == "exec" {
+		_, _ = io.WriteString(stdout, c.execOutput)
+		onRun, err = nil, c.execErr
+	}
 	if inv.Project == "siding" {
 		onRun = c.onProxy
 	}

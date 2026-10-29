@@ -66,7 +66,7 @@ func TestSetup(t *testing.T) {
 		e := newEnv(t)
 		setupDoc(t, e)
 		code, stdout, _ := e.run("setup")
-		if code != exitOK || stdout != "siding-proxy already runs on http://*.localhost/, memory budget 12.0 GiB\n" {
+		if code != exitOK || stdout != "siding-proxy already runs on http://*.localhost/, memory budget 12.0 GiB, 4 build slots\n" {
 			t.Errorf("exit %d, stdout %q", code, stdout)
 		}
 	})
@@ -107,6 +107,26 @@ func TestSetup(t *testing.T) {
 		}
 		if code, stdout, _ := e.run("setup", "--budget", "lots", "--json"); code != exitFailed || !strings.Contains(stdout, `"code": "InvalidArguments"`) {
 			t.Errorf("bad size: exit %d, %s", code, stdout)
+		}
+	})
+
+	t.Run("build slots", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t)
+		if doc := setupDoc(t, e); doc.Builds != 4 {
+			t.Errorf("default with 8 CPUs: %d", doc.Builds)
+		}
+		if doc := setupDoc(t, e, "--builds", "2"); doc.Builds != 2 || e.docker.proxy.Labels["dev.siding.builds"] != "2" {
+			t.Errorf("set: %+v", doc)
+		}
+		if doc := setupDoc(t, e); doc.State != "unchanged" || doc.Builds != 2 {
+			t.Errorf("kept: %+v", doc)
+		}
+		if doc := setupDoc(t, e, "--builds", "default"); doc.Builds != 4 {
+			t.Errorf("default: %+v", doc)
+		}
+		if code, stdout, _ := e.run("setup", "--builds", "0", "--json"); code != exitFailed || !strings.Contains(stdout, `"code": "InvalidArguments"`) {
+			t.Errorf("--builds 0: exit %d, %s", code, stdout)
 		}
 	})
 

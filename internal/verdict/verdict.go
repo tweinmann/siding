@@ -27,6 +27,7 @@ const (
 	Missing      = "Missing"
 	NotAnswering = "NotAnswering"
 	NotReady     = "NotReady"
+	SeedFailed   = "SeedFailed"
 )
 
 // restartLimit is how many restarts while waiting count as a crash loop.
@@ -52,6 +53,8 @@ type Input struct {
 	// Final is set when the time is up: what is not ready now is TimedOut.
 	Final   bool
 	Timeout time.Duration
+	// Seed is set when a seed command of this up failed; it decides the verdict.
+	Seed *Failure
 }
 
 // Service is the state of one service.
@@ -69,6 +72,8 @@ type Failure struct {
 	Service string
 	Reason  string
 	Hint    string
+	// Output replaces the service's log tail, e.g. with a failed seed command's output.
+	Output []string
 }
 
 // Result is a verdict with the state of every service.
@@ -113,6 +118,8 @@ func Evaluate(in Input) Result {
 		}
 	}
 	switch {
+	case in.Seed != nil:
+		res.Verdict, res.Failure = Failed, in.Seed
 	case firstFailed != nil:
 		res.Verdict, res.Failure = Failed, firstFailed
 	case allReady:

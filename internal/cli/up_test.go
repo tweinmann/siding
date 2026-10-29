@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tweinmann/siding/internal/budget"
 	"github.com/tweinmann/siding/internal/fail"
 	"github.com/tweinmann/siding/internal/testutil"
 )
@@ -171,10 +172,11 @@ func TestUpBudget(t *testing.T) {
 		e := newEnv(t)
 		e.proxyUp(80)
 		e.docker.proxy.Labels["dev.siding.budget"] = fmt.Sprint(budgetMiB * mib)
+		// Another repository, so its use is not learned as this stack's peak.
 		other := e.id()
-		other.Branch, other.Worktree = "feature/other", "/src/other"
+		other.Repo, other.Branch, other.Worktree = "blog", "feature/other", "/src/other"
 		e.stackUp(other, "web")
-		e.docker.memory["shop-feature-other-web-1"] = 3584 * mib
+		e.docker.memory["blog-feature-other-web-1"] = 3584 * mib
 		return e
 	}
 
@@ -221,4 +223,27 @@ func TestUpBudget(t *testing.T) {
 			t.Errorf("exit %d: %s", code, stdout)
 		}
 	})
+}
+
+// A peak siding learned from one branch's stack makes the estimate of the next branch's.
+func TestUpLearnedPeak(t *testing.T) {
+	t.Parallel()
+	const mib = 1 << 20
+	e := newEnv(t)
+	e.proxyUp(80)
+	e.docker.proxy.Labels["dev.siding.budget"] = fmt.Sprint(2048 * mib)
+	main := e.id()
+	main.Branch, main.Worktree = "feature/other", "/src/other"
+	e.stackUp(main, "web")
+	e.docker.memory["shop-feature-other-web-1"] = 1200 * mib
+	if code, _, _ := e.run("ps"); code != exitOK {
+		t.Fatal("ps failed")
+	}
+	if got := budget.LoadPeaks(e.opts.Home)["shop/web"]; got != 1200*mib {
+		t.Fatalf("learned %d MiB, want 1200", got/mib)
+	}
+	// 1200 MiB used by the other stack, plus 1500 MiB for web and 3 × 256 MiB: over 2 GiB.
+	if code, stdout, _ := e.run("up", "--json"); code != exitNoCapacity || !strings.Contains(stdout, "needs about 2.2 GiB") {
+		t.Errorf("exit %d: %s", code, stdout)
+	}
 }

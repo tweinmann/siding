@@ -45,6 +45,16 @@
 <p class="muted">No stacks. Start one with <code>siding up</code> in a worktree.</p>
 {{end}}
 
+{{if .Stacks.Waiting}}
+<h2>Waiting for memory</h2>
+<table>
+<tr><th>Place</th><th>Stack</th><th class="num">Needs</th><th>Since</th></tr>
+{{range .Stacks.Waiting}}
+<tr><td>{{.Place}}</td><td>{{.Project}}</td><td class="num">{{bytes64 .MemoryBytes}}</td><td>{{.Since}}</td></tr>
+{{end}}
+</table>
+{{end}}
+
 <h2>Can go</h2>
 {{if .GC.Stacks}}
 <table>
