@@ -17,8 +17,8 @@ changing architecture.
 Phase 0 approved (2026-10-28). Phase 1 (v0.1) and Phase 2 (v0.2) approved and archived
 (2026-10-28, `openspec/changes/archive/2026-10-28-phase-1-stacks-and-routing` and
 `…-phase-2-overview-and-budget`). Phase 3 (v0.3) approved and archived (2026-10-29,
-`…/2026-10-29-phase-3-snapshots-and-queue`). Phase 4 (v0.4, `phase-4-idle-and-wake`)
-implemented, waiting for approval; its spike dropped Sablier (see its design.md). siding
+`…/2026-10-29-phase-3-snapshots-and-queue`). Phase 4 (v0.4) approved and archived (2026-10-29,
+`…/2026-10-29-phase-4-idle-and-wake`); its spike dropped Sablier (see its design.md). siding
 today: `setup [--port] [--budget] [--builds] [--idle]`, `teardown [--snapshots]`, `up [--wait]
 [--force] [--seed]`, `status [--wait]`, `ps`, `logs`, `open`, `down [--volumes]`,
 `snapshot save|ls|rm`, `gc`, `lint`, `ui`, `skill`; routing by host and path through

@@ -98,9 +98,10 @@ port the compose file publishes, and that Traefik with the Docker provider on th
 
 ### Requirement: Stack smoke test
 `just smoke-stacks` SHALL run siding's own commands end to end against the inner daemon:
-`setup`, `up --wait`, routing by host and path, a `Failed` verdict with log tail, `ps`, `down`
-and the refusal of `down --volumes`. Its proxy, network and projects MUST carry the prefix
-`siding-test-`, and its proxy MUST listen on 18080.
+`setup`, `up --wait`, routing by host and path, a `Failed` verdict with log tail, `ps`, `down`,
+the refusal of `down --volumes`, and an `up` that stops an idle stack to make room, which then
+reports `Stopped` and starts again with `up --wait`. Its proxy, network and projects MUST carry
+the prefix `siding-test-`, and its proxy MUST listen on 18080.
 
 #### Scenario: Stack smoke test in CI
 - **WHEN** a pull request is opened or pushed to, or a commit is pushed to `main`
@@ -113,6 +114,10 @@ and the refusal of `down --volumes`. Its proxy, network and projects MUST carry 
 #### Scenario: Not part of level 1
 - **WHEN** `just test` runs without a Docker daemon
 - **THEN** it passes, because the end-to-end tests only build with the `docker` build tag
+
+#### Scenario: Making room
+- **WHEN** the end-to-end test runs with `--idle 10s` and a small budget, starts one stack, waits 15 seconds without a request, and starts a second that only fits without the first
+- **THEN** the first is stopped and reports `Stopped`, the second is Ready, and `up --wait` in the first's worktree after `down` of the second makes it Ready again with its data
 
 ### Requirement: Test stacks
 Tests SHALL create stacks only as Compose projects whose name starts with `siding-test-`, and

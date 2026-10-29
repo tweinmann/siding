@@ -44,8 +44,9 @@ memory limit (`deploy.resources.limits.memory`, else `mem_limit`); without eithe
 ### Requirement: up refuses over budget
 `siding up` SHALL refuse with `NoCapacity` and exit 3, before starting anything, when the
 memory in use by every other siding stack on the machine plus the estimate of this stack
-exceeds the budget. The message MUST name the budget, the use and the estimate. `--force`
-starts it anyway.
+exceeds the budget and stopping idle stacks cannot make it fit (see the capability
+`idle-stop`). The message MUST name the budget, the use and the estimate. `--force` starts it
+anyway, without stopping any stack.
 
 #### Scenario: Over budget
 - **WHEN** the budget is 4 GiB, other stacks use 3.5 GiB and the new stack's estimate is 768 MiB
@@ -62,6 +63,10 @@ starts it anyway.
 #### Scenario: Within budget
 - **WHEN** the other stacks and the estimate fit into the budget
 - **THEN** `siding up` behaves as without a budget
+
+#### Scenario: Stopped stacks use nothing
+- **WHEN** a stack held 2 GiB before it was stopped to make room
+- **THEN** it counts 0 bytes against the budget while it is stopped
 
 ### Requirement: Learned peaks
 Whenever siding reads the memory of running containers (`ps`, `ui`, `status`, `up`), it SHALL
