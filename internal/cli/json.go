@@ -18,19 +18,21 @@ import (
 const documentAPIVersion = "siding.dev/v1alpha1"
 
 const (
-	kindAddress    = "Address"
-	kindDown       = "Down"
-	kindError      = "Error"
-	kindGC         = "GC"
-	kindLintReport = "LintReport"
-	kindLogs       = "Logs"
-	kindSetup      = "Setup"
-	kindSkill      = "Skill"
-	kindStack      = "Stack"
-	kindStackList  = "StackList"
-	kindStatus     = "Status"
-	kindTeardown   = "Teardown"
-	kindVersion    = "Version"
+	kindAddress      = "Address"
+	kindDown         = "Down"
+	kindError        = "Error"
+	kindGC           = "GC"
+	kindLintReport   = "LintReport"
+	kindLogs         = "Logs"
+	kindSetup        = "Setup"
+	kindSkill        = "Skill"
+	kindSnapshot     = "Snapshot"
+	kindSnapshotList = "SnapshotList"
+	kindStack        = "Stack"
+	kindStackList    = "StackList"
+	kindStatus       = "Status"
+	kindTeardown     = "Teardown"
+	kindVersion      = "Version"
 )
 
 // jsonFlag is the name of the flag, looked up again by Execute to report an error as a document.
@@ -111,6 +113,10 @@ type setupDocument struct {
 	State string `json:"state"`
 	// BudgetBytes is the memory budget for all stacks.
 	BudgetBytes int64 `json:"budgetBytes"`
+	// Builds is how many stacks may build images at once.
+	Builds int `json:"builds"`
+	// Idle is the idle threshold, e.g. 5m0s, or off.
+	Idle string `json:"idle"`
 }
 
 // stackDocument is what up prints without --wait.
@@ -132,11 +138,13 @@ type serviceAddress struct {
 // statusDocument is the verdict of status and up --wait.
 type statusDocument struct {
 	header
-	// Verdict is Ready, Starting, Failed or TimedOut.
+	// Verdict is Ready, Starting, Failed, TimedOut or Stopped.
 	Verdict  string           `json:"verdict"`
 	Stack    stackRef         `json:"stack"`
 	Services []serviceStatus  `json:"services,omitempty"`
 	Failure  *failureDocument `json:"failure,omitempty"`
+	// Hint says what to do about a Stopped stack.
+	Hint string `json:"hint,omitempty"`
 }
 
 type serviceStatus struct {
@@ -164,6 +172,16 @@ type stackListDocument struct {
 	Stacks      []stackEntry `json:"stacks,omitempty"`
 	MemoryBytes uint64       `json:"memoryBytes,omitempty"`
 	BudgetBytes int64        `json:"budgetBytes"`
+	// Waiting are the stacks waiting in line for memory, first first.
+	Waiting []waitingEntry `json:"waiting,omitempty"`
+}
+
+type waitingEntry struct {
+	Project string `json:"project"`
+	Place   int    `json:"place"`
+	// MemoryBytes is the memory the stack needs.
+	MemoryBytes int64  `json:"memoryBytes"`
+	Since       string `json:"since"`
 }
 
 type stackEntry struct {
@@ -207,6 +225,8 @@ type downDocument struct {
 	Containers []string `json:"containers,omitempty"`
 	Networks   []string `json:"networks,omitempty"`
 	Volumes    []string `json:"volumes,omitempty"`
+	// keptVolumes counts the volumes a down without --volumes leaves, for the text only.
+	keptVolumes int
 }
 
 // skillDocument is what skill --json prints.
@@ -273,4 +293,40 @@ type teardownDocument struct {
 	KeptNetwork string `json:"keptNetwork,omitempty"`
 	// Stacks keep running as plain Compose projects.
 	Stacks []string `json:"stacks,omitempty"`
+	// Snapshots are removed with --snapshots, as "<repo>/<name>"; KeptSnapshots stay without it.
+	Snapshots     []string `json:"snapshots,omitempty"`
+	KeptSnapshots []string `json:"keptSnapshots,omitempty"`
+}
+
+// snapshotDocument is what snapshot save and snapshot rm print.
+type snapshotDocument struct {
+	header
+	Name    string           `json:"name"`
+	Repo    string           `json:"repo"`
+	Created string           `json:"created,omitempty"`
+	DryRun  bool             `json:"dryRun,omitempty"`
+	Volumes []snapshotVolume `json:"volumes,omitempty"`
+}
+
+type snapshotVolume struct {
+	// Key is the volume's name in the compose file.
+	Key string `json:"key"`
+	// Source is the stack's volume it was copied from, when saving.
+	Source   string `json:"source,omitempty"`
+	Snapshot string `json:"snapshot"`
+}
+
+// snapshotListDocument is what snapshot ls prints.
+type snapshotListDocument struct {
+	header
+	Snapshots []snapshotEntry `json:"snapshots,omitempty"`
+}
+
+type snapshotEntry struct {
+	Name    string   `json:"name"`
+	Repo    string   `json:"repo"`
+	Created string   `json:"created,omitempty"`
+	Volumes []string `json:"volumes"`
+	// SizeBytes is -1 when Docker does not know the size.
+	SizeBytes int64 `json:"sizeBytes"`
 }

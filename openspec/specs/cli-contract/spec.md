@@ -46,7 +46,7 @@ it SHALL print `error: <message>` on stderr, followed by a hint line when there 
 
 #### Scenario: The error codes
 - **WHEN** a command fails
-- **THEN** its code is one of `InvalidArguments`, `NotAGitRepository`, `NoBranch`, `ComposeFileNotFound`, `ComposeFailed`, `DockerUnavailable`, `ProxyNotRunning`, `PortInUse`, `InvalidRoute`, `AmbiguousPort`, `SlugCollision`, `StackNotFound`, `UnmergedBranch`, `DirtyWorktree`, `NoCapacity`, `NotInteractive`, or `Internal` for an unexpected error
+- **THEN** its code is one of `InvalidArguments`, `NotAGitRepository`, `NoBranch`, `ComposeFileNotFound`, `ComposeFailed`, `DockerUnavailable`, `ProxyNotRunning`, `PortInUse`, `InvalidRoute`, `AmbiguousPort`, `SlugCollision`, `StackNotFound`, `UnmergedBranch`, `DirtyWorktree`, `NoCapacity`, `NotInteractive`, `SnapshotNotFound`, `SnapshotExists`, or `Internal` for an unexpected error
 
 #### Scenario: No capacity
 - **WHEN** `siding up --json` refuses because the stack does not fit into the memory budget
@@ -54,19 +54,24 @@ it SHALL print `error: <message>` on stderr, followed by a hint line when there 
 
 ### Requirement: Exit codes
 siding SHALL exit 0 on success and when a stack is Ready, 1 when a command fails or a stack is
-Failed, 2 when a stack is not Ready in time (TimedOut, or Starting without `--wait`), 3 when
-`up` refuses for lack of memory (NoCapacity), and 130 without a message when interrupted.
+Failed, 2 when a stack is not Ready in time (TimedOut, or Starting without `--wait`) or is
+stopped (Stopped), 3 when `up` refuses for lack of memory or waited in line until `--timeout`
+(NoCapacity), and 130 without a message when interrupted.
 
 #### Scenario: A verdict decides the exit code
 - **WHEN** `siding status --wait` ends with the verdict Failed
 - **THEN** it exits 1, and with Ready it exits 0
+
+#### Scenario: Stopped
+- **WHEN** `siding status` reports the verdict Stopped
+- **THEN** it exits 2
 
 #### Scenario: Interrupted
 - **WHEN** the user presses Ctrl-C during `siding logs -f`
 - **THEN** siding stops docker compose and exits 130 without an error message
 
 #### Scenario: Over budget
-- **WHEN** `siding up --wait` refuses because the memory budget is exhausted
+- **WHEN** `siding up --wait` waits in line for memory until `--timeout` is up
 - **THEN** it exits 3 without starting a container
 
 ### Requirement: Version

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -27,8 +28,10 @@ func newSetupCommand(a *app) *cobra.Command {
 		Short: "Start the shared proxy siding-proxy on 127.0.0.1",
 		Long: `Start the shared proxy siding-proxy: Traefik on the network "siding", published on
 127.0.0.1 only. Without --port it keeps the port of a running proxy, and uses 80 otherwise;
-without --budget it keeps the budget set before. Running setup again recreates the proxy only
-when something differs.`,
+without --budget it keeps the budget set before, and without --idle the idle threshold. When a
+new stack does not fit into the budget, up stops other stacks that had no request through the
+proxy for the idle threshold (5 minutes by default). Running setup again recreates the proxy
+only when something differs.`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if f.port < 0 || f.port > 65535 {
@@ -42,20 +45,26 @@ when something differs.`,
 				return printJSON(cmd.OutOrStdout(), doc)
 			}
 			verb := map[string]string{"created": "started", "updated": "restarted", "unchanged": "already runs"}[doc.State]
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s, memory budget %s\n", doc.Container, verb,
-				address("*.localhost", doc.Port, "/"), bytesText(uint64(doc.BudgetBytes)))
+			idle := "idle stacks make room after " + doc.Idle
+			if doc.Idle == idleOff {
+				idle = "idle stacks are never stopped"
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s, memory budget %s, %d build slots, %s\n", doc.Container, verb,
+				address("*.localhost", doc.Port, "/"), bytesText(uint64(doc.BudgetBytes)), doc.Builds, idle)
 			return err
 		},
 	}
 	cmd.Flags().IntVar(&f.port, "port", 0, "port on 127.0.0.1 for the proxy (default: the running proxy's, else 80)")
+	cmd.Flags().StringVar(&f.builds, "builds", "", "how many stacks may build images at once; \"default\" for half of Docker's CPUs (default: the number set before)")
+	cmd.Flags().StringVar(&f.idle, "idle", "", "how long a stack has had no request before up may stop it to make room, e.g. 15m; \"off\" to never stop one, \"default\" for 5m (default: the threshold set before)")
 	cmd.Flags().StringVar(&f.budget, "budget", "", "memory budget for all stacks, e.g. 12g; \"default\" for 75% of Docker's memory (default: the budget set before)")
 	registerJSON(cmd, &asJSON)
 	return cmd
 }
 
 type setupFlags struct {
-	port   int
-	budget string
+	port                 int
+	budget, builds, idle string
 }
 
 func (a *app) setup(cmd *cobra.Command, f setupFlags) (setupDocument, error) {
@@ -89,6 +98,22 @@ func (a *app) setup(cmd *cobra.Command, f setupFlags) (setupDocument, error) {
 		if settings.Budget, err = budget.ParseSize(f.budget); err != nil {
 			return setupDocument{}, fail.New(fail.InvalidArguments, "--budget %q: %v", f.budget, err)
 		}
+	}
+
+	switch f.builds {
+	case "":
+		if current != nil {
+			settings.Builds, _ = strconv.Atoi(current.Labels[stack.LabelBuilds])
+		}
+	case "default":
+	default:
+		if settings.Builds, err = strconv.Atoi(f.builds); err != nil || settings.Builds < 1 {
+			return setupDocument{}, fail.New(fail.InvalidArguments, "--builds must be a number of at least 1 or \"default\", got %q", f.builds)
+		}
+	}
+
+	if settings.Idle, err = idleSetting(f.idle, current); err != nil {
+		return setupDocument{}, err
 	}
 
 	if _, err := a.opts.Docker.EnsureNetwork(ctx, cfg.Network, map[string]string{stack.LabelMachine: machine}); err != nil {
@@ -135,7 +160,83 @@ func (a *app) setup(cmd *cobra.Command, f setupFlags) (setupDocument, error) {
 	if doc.BudgetBytes, err = a.budget(ctx, after); err != nil {
 		return setupDocument{}, err
 	}
+	if doc.Builds, err = a.builds(ctx, after); err != nil {
+		return setupDocument{}, err
+	}
+	doc.Idle = idleOff
+	if d, on := idleThreshold(after); on {
+		doc.Idle = d.String()
+	}
 	return doc, nil
+}
+
+// builds is the number of build slots: the proxy's label, else half of Docker's CPUs, at least 1.
+func (a *app) builds(ctx context.Context, proxyContainer *docker.Container) (int, error) {
+	if proxyContainer != nil {
+		if n, err := strconv.Atoi(proxyContainer.Labels[stack.LabelBuilds]); err == nil && n > 0 {
+			return n, nil
+		}
+	}
+	cpus, err := a.opts.Docker.NCPU(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return max(1, cpus/2), nil
+}
+
+const (
+	// defaultIdle is the idle threshold without the label dev.siding.idle.
+	defaultIdle = 5 * time.Minute
+	// minIdle is the shortest threshold setup accepts.
+	minIdle = 10 * time.Second
+	idleOff = "off"
+)
+
+// idleSetting is the label dev.siding.idle setup writes for --idle: the current one without the
+// flag, none for "default", 0 for "off", else the duration in seconds.
+func idleSetting(flag string, current *docker.Container) (*int64, error) {
+	var seconds int64
+	switch flag {
+	case "":
+		if current == nil {
+			return nil, nil
+		}
+		n, err := strconv.ParseInt(current.Labels[stack.LabelIdle], 10, 64)
+		if err != nil || n < 0 {
+			return nil, nil
+		}
+		seconds = n
+	case "default":
+		return nil, nil
+	case idleOff:
+	default:
+		d, err := time.ParseDuration(flag)
+		if err != nil || d < minIdle {
+			return nil, fail.New(fail.InvalidArguments, "--idle must be a duration of at least %s, \"off\" or \"default\", got %q", minIdle, flag)
+		}
+		seconds = int64(d / time.Second)
+	}
+	return &seconds, nil
+}
+
+// idleThreshold is how long a stack has had no request before up may stop it to make room
+// (spec idle-stop), and false when making room is off.
+func idleThreshold(proxyContainer *docker.Container) (time.Duration, bool) {
+	if proxyContainer == nil {
+		return defaultIdle, true
+	}
+	v, ok := proxyContainer.Labels[stack.LabelIdle]
+	if !ok {
+		return defaultIdle, true
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	switch {
+	case err != nil || n < 0:
+		return defaultIdle, true
+	case n == 0:
+		return 0, false
+	}
+	return time.Duration(n) * time.Second, true
 }
 
 // hostPort is the port on the host a proxy container publishes, or 0.

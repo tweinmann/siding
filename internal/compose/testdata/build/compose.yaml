@@ -1,0 +1,6 @@
+# One service built from a Dockerfile, one from an image only.
+services:
+  app:
+    build: ./app
+  db:
+    image: busybox:1.37.0

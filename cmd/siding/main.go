@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -41,6 +42,8 @@ func main() {
 		Getenv:         os.Getenv,
 		OSMachineID:    stack.OSMachineID,
 		Stdin:          os.Stdin,
+		PID:            os.Getpid(),
+		Alive:          processAlive,
 		IsLocalAddress: overview.IsLocalAddress,
 		IsTerminal:     stdinIsTerminal,
 		Git:            git.Client{},
@@ -54,6 +57,12 @@ func main() {
 	code := cli.Execute(ctx, cli.New(opts), os.Args[1:], os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
+}
+
+// processAlive reports whether the process pid still runs: signal 0 checks without sending.
+func processAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // stdinIsTerminal reports whether stdin is a terminal, i.e. a human can answer a question.

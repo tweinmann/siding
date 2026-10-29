@@ -31,7 +31,7 @@ type waitFlags struct {
 }
 
 func (w *waitFlags) register(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&w.wait, "wait", false, "wait until the stack is Ready or Failed, at most --timeout")
+	cmd.Flags().BoolVar(&w.wait, "wait", false, "wait until the stack is Ready, Failed or Stopped, at most --timeout")
 	cmd.Flags().DurationVar(&w.timeout, "timeout", defaultTimeout, "how long --wait waits")
 }
 
@@ -41,12 +41,13 @@ func newStatusCommand(a *app) *cobra.Command {
 	var w waitFlags
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Tell whether the worktree's stack runs: Ready, Starting, Failed or TimedOut",
+		Short: "Tell whether the worktree's stack runs: Ready, Starting, Failed, TimedOut or Stopped",
 		Long: `Tell whether the worktree's stack runs. Ready means every service has a container,
 every healthcheck is healthy, and every service with a route path answers through the proxy.
-A failure names the service, the reason, a hint and its last log lines.
+A failure names the service, the reason, a hint and its last log lines. Stopped means no
+container runs and none failed, e.g. after up in another worktree stopped it to make room.
 
-Exit codes: 0 Ready, 1 Failed, 2 TimedOut (or Starting without --wait).`,
+Exit codes: 0 Ready, 1 Failed, 2 TimedOut, Stopped (or Starting without --wait).`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -62,7 +63,7 @@ Exit codes: 0 Ready, 1 Failed, 2 TimedOut (or Starting without --wait).`,
 			if err != nil {
 				return err
 			}
-			doc, err := a.status(ctx, st, p, port, w)
+			doc, err := a.status(ctx, st, p, port, w, nil)
 			if err != nil {
 				return err
 			}
@@ -76,7 +77,9 @@ Exit codes: 0 Ready, 1 Failed, 2 TimedOut (or Starting without --wait).`,
 }
 
 // status evaluates the stack once, or until it is Ready or Failed or the time is up.
-func (a *app) status(ctx context.Context, st existing, p *compose.Project, port int, w waitFlags) (statusDocument, error) {
+// seedFailure, when set, is a failed seed command of the up that called status; it decides the
+// verdict.
+func (a *app) status(ctx context.Context, st existing, p *compose.Project, port int, w waitFlags, seedFailure *verdict.Failure) (statusDocument, error) {
 	routes, _, err := stack.Routes(p)
 	if err != nil {
 		return statusDocument{}, err
@@ -86,6 +89,10 @@ func (a *app) status(ctx context.Context, st existing, p *compose.Project, port 
 		if r.Path != "" {
 			routed[r.Service] = verdict.Route{URL: address(st.id.Host(), port, r.Path), Port: r.Port}
 		}
+	}
+	healthchecks := map[string]bool{}
+	for name, svc := range p.Services {
+		healthchecks[name] = svc.Healthcheck
 	}
 	start := a.opts.Clock.Now()
 	var base map[string]int
@@ -100,13 +107,21 @@ func (a *app) status(ctx context.Context, st existing, p *compose.Project, port 
 				base[c.ID] = c.RestartCount
 			}
 		}
-		answering := a.probe(ctx, st, routes, cs, port)
 		final := w.wait && a.opts.Clock.Now().Sub(start) >= w.timeout
-		res := verdict.Evaluate(verdict.Input{
-			Services: p.ServiceNames(), Containers: cs, Routes: routed, Answering: answering,
-			RestartBase: base, Final: final, Timeout: w.timeout,
-		})
-		if !w.wait || final || res.Verdict == verdict.Ready || res.Verdict == verdict.Failed {
+		in := verdict.Input{
+			Services: p.ServiceNames(), Containers: cs, Routes: routed, Healthchecks: healthchecks,
+			RestartBase: base, Final: final, Timeout: w.timeout, Seed: seedFailure,
+		}
+		// A stopped stack is not probed: nothing would answer (spec stack-status).
+		res := verdict.Evaluate(in)
+		if res.Verdict != verdict.Stopped {
+			in.Answering = a.probe(ctx, st, routes, cs, port)
+			res = verdict.Evaluate(in)
+		}
+		if !w.wait || final || res.Verdict == verdict.Ready || res.Verdict == verdict.Failed || res.Verdict == verdict.Stopped {
+			if res.Verdict == verdict.Ready {
+				_, _ = a.memory(ctx, cs) // learns this stack's peaks (design D7)
+			}
 			return a.statusDocument(ctx, st, p, routes, port, cs, res)
 		}
 		if err := a.opts.Clock.Sleep(ctx, pollInterval); err != nil {
@@ -137,8 +152,14 @@ func (a *app) probe(ctx context.Context, st existing, routes []stack.Route, cs [
 func (a *app) statusDocument(ctx context.Context, st existing, p *compose.Project, routes []stack.Route, port int,
 	cs []docker.Container, res verdict.Result) (statusDocument, error) {
 	doc := statusDocument{header: newHeader(kindStatus), Verdict: res.Verdict, Stack: st.ref(port)}
+	if res.Verdict == verdict.Stopped {
+		doc.Hint = stoppedHint
+	}
 	for _, s := range res.Services {
 		ss := serviceStatus{Name: s.Name, State: s.State, Health: s.Health, Answering: s.Answering, Ready: s.Ready}
+		if res.Verdict == verdict.Stopped {
+			ss.Answering = nil // not asked: a stopped stack is not probed
+		}
 		if r, ok := stack.Find(routes, s.Name); ok {
 			ss.Route = r.Path
 			ss.URL = address(st.id.ServiceHost(s.Name), port, "/")
@@ -147,12 +168,14 @@ func (a *app) statusDocument(ctx context.Context, st existing, p *compose.Projec
 	}
 	if f := res.Failure; f != nil {
 		doc.Failure = &failureDocument{Service: f.Service, Reason: f.Reason, Hint: f.Hint}
-		if containers := byService(cs)[f.Service]; len(containers) > 0 {
+		r, err := redactor(st.wt.Top, p)
+		if err != nil {
+			return statusDocument{}, err
+		}
+		if f.Output != nil {
+			doc.Failure.Logs = r.Lines(f.Output)
+		} else if containers := byService(cs)[f.Service]; len(containers) > 0 {
 			lines, err := a.opts.Docker.Logs(ctx, failing(containers).ID, logTail)
-			if err != nil {
-				return statusDocument{}, err
-			}
-			r, err := redactor(st.wt.Top, p)
 			if err != nil {
 				return statusDocument{}, err
 			}
@@ -161,6 +184,9 @@ func (a *app) statusDocument(ctx context.Context, st existing, p *compose.Projec
 	}
 	return doc, nil
 }
+
+// stoppedHint is what a Stopped verdict tells: siding stopped it to make room, or someone did.
+const stoppedHint = "every container of the stack is stopped, perhaps to make room for another stack; siding up --wait starts it again"
 
 // failing picks the container of a service whose logs explain its failure: one that is not
 // running, else the first.
@@ -215,6 +241,9 @@ func printStatusText(w io.Writer, doc statusDocument) error {
 		rows = append(rows, []string{s.Name, state, reach, where})
 	}
 	b.WriteString(table("  ", rows))
+	if doc.Hint != "" {
+		fmt.Fprintf(&b, "\n%s\n", doc.Hint)
+	}
 	if f := doc.Failure; f != nil {
 		fmt.Fprintf(&b, "\n%s: %s, %s\n", f.Service, f.Reason, f.Hint)
 		if len(f.Logs) > 0 {

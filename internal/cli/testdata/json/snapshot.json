@@ -1,0 +1,14 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Snapshot",
+  "name": "base",
+  "repo": "shop",
+  "created": "2026-10-28T12:00:00Z",
+  "volumes": [
+    {
+      "key": "data",
+      "source": "shop-main_data",
+      "snapshot": "siding-snap_shop_base_data"
+    }
+  ]
+}

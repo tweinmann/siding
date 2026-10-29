@@ -20,8 +20,11 @@ left="$(
   docker ps -a --format '{{.Names}}'
   docker network ls --format '{{.Name}}'
   docker volume ls --format '{{.Name}}'
+  docker images --format '{{.Repository}}'
 )"
-if grep -q "^${SIDING_TEST_PREFIX}" <<<"$left"; then
-  die "objects named ${SIDING_TEST_PREFIX}* are left in the inner daemon: $(grep "^${SIDING_TEST_PREFIX}" <<<"$left" | tr '\n' ' ')"
+# Snapshot volumes are named siding-snap_<repo>_..., and the tests' repositories siding-test-*.
+pattern="^(${SIDING_TEST_PREFIX}|siding-snap_${SIDING_TEST_PREFIX})"
+if grep -Eq "$pattern" <<<"$left"; then
+  die "test objects are left in the inner daemon: $(grep -E "$pattern" <<<"$left" | tr '\n' ' ')"
 fi
 echo "smoke-stacks: ok"

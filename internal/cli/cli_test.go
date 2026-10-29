@@ -113,7 +113,8 @@ func TestErrorCodes(t *testing.T) {
 		fail.InvalidArguments, fail.NotAGitRepository, fail.NoBranch, fail.ComposeFileNotFound,
 		fail.ComposeFailed, fail.DockerUnavailable, fail.ProxyNotRunning, fail.PortInUse,
 		fail.InvalidRoute, fail.AmbiguousPort, fail.SlugCollision, fail.StackNotFound,
-		fail.UnmergedBranch, fail.DirtyWorktree, fail.NoCapacity, fail.NotInteractive, fail.Internal,
+		fail.UnmergedBranch, fail.DirtyWorktree, fail.NoCapacity, fail.NotInteractive,
+		fail.SnapshotNotFound, fail.SnapshotExists, fail.Internal,
 	}
 	for _, code := range codes {
 		t.Run(code, func(t *testing.T) {

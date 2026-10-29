@@ -21,13 +21,15 @@ func TestSkill(t *testing.T) {
 	if !strings.HasPrefix(text, "---\nname: siding\ndescription: ") {
 		t.Errorf("not a skill named siding:\n%s", text[:min(len(text), 80)])
 	}
-	for _, want := range []string{"siding up --wait --json", "siding status --json", "siding logs --json", "**0, `Ready`**", "**1, `Failed`**", "**2, `TimedOut`**", "**3, `NoCapacity`**"} {
+	for _, want := range []string{"siding up --wait --json", "siding status --json", "siding logs --json", "**0, `Ready`**", "**1, `Failed`**", "**2, `TimedOut`**", "**2, `Stopped`**", "**3, `NoCapacity`**",
+		"`stack.url`", "Never give\n  `localhost:<port>`"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the skill does not mention %q", want)
 		}
 	}
 	// Only a human removes data, forces anything, or exposes a stack.
-	for _, never := range []string{"--force", "--volumes", "share", "gc"} {
+	// The idle threshold is the user's decision too.
+	for _, never := range []string{"--force", "--volumes", "--idle", "share", "gc"} {
 		if strings.Contains(text, never) {
 			t.Errorf("the skill mentions %q", never)
 		}

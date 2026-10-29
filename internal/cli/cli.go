@@ -20,7 +20,7 @@ import (
 )
 
 // Exit codes. They are part of the contract with agents, like the --json documents: 0 Ready,
-// 1 Failed, 2 TimedOut (or Starting without --wait), 3 NoCapacity. A command that fails with
+// 1 Failed, 2 TimedOut or Stopped (or Starting without --wait), 3 NoCapacity. A command that fails with
 // an Error document exits 1.
 const (
 	exitOK       = 0
@@ -45,6 +45,9 @@ type Options struct {
 	Getenv func(string) string
 	// OSMachineID returns the operating system's machine id, or "".
 	OSMachineID func() string
+	// PID is siding's process id, and Alive reports whether a process still runs (the queue).
+	PID   int
+	Alive func(pid int) bool
 	// IsLocalAddress reports whether an IP address belongs to this machine.
 	IsLocalAddress func(ip string) bool
 	// Stdin is where questions are answered; IsTerminal reports whether a human is there.
@@ -86,7 +89,13 @@ type Docker interface {
 	NetworkGateway(ctx context.Context, name string) (string, error)
 	NetworkUsers(ctx context.Context, name string) (exists bool, users []string, err error)
 	RemoveNetwork(ctx context.Context, name string) error
+	NCPU(ctx context.Context) (int, error)
+	CreateVolume(ctx context.Context, name string, labels map[string]string) error
+	RemoveVolume(ctx context.Context, name string) error
+	VolumeSizes(ctx context.Context) (map[string]int64, error)
+	RunHelper(ctx context.Context, h docker.Helper) (exit int, output []string, err error)
 	Logs(ctx context.Context, id string, tail int) ([]string, error)
+	Stdout(ctx context.Context, id string) ([]string, error)
 	Memory(ctx context.Context, id string) (uint64, error)
 }
 
@@ -134,6 +143,7 @@ func New(opts Options) *cobra.Command {
 		newLintCommand(a),
 		newUICommand(a),
 		newTeardownCommand(a),
+		newSnapshotCommand(a),
 		newSkillCommand(),
 	)
 	return root

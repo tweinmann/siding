@@ -39,6 +39,10 @@ type Container struct {
 	RestartCount int
 	OOMKilled    bool
 	Ports        []Port
+	// StartedAt is when the container last started; zero when it never did.
+	StartedAt time.Time
+	// Cmd is the container's command, its arguments after the image's entrypoint.
+	Cmd []string
 }
 
 // Port is a published port.
@@ -56,7 +60,19 @@ type Network struct {
 
 // Volume is a Docker volume.
 type Volume struct {
-	Name   string
+	Name    string
+	Labels  map[string]string
+	Created string
+	// Size in bytes, set only by VolumeSizes; -1 when Docker does not know it.
+	Size int64
+}
+
+// Helper is a short-lived container that works on volumes, such as copying one into another.
+type Helper struct {
+	Image string
+	// Binds are volume mounts, "<volume>:<path>[:ro]".
+	Binds  []string
+	Cmd    []string
 	Labels map[string]string
 }
 
@@ -114,6 +130,117 @@ func labelFilters(labels map[string]string) client.Filters {
 		}
 	}
 	return f
+}
+
+// NCPU returns the CPUs the Docker daemon has, the VM's on Docker Desktop.
+func (c *Client) NCPU(ctx context.Context) (int, error) {
+	api, err := c.connect()
+	if err != nil {
+		return 0, err
+	}
+	res, err := api.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return 0, unavailable(err)
+	}
+	return res.Info.NCPU, nil
+}
+
+// CreateVolume creates a new volume with labels. It fails when the name is taken: Docker would
+// silently hand back the existing volume, and siding would write into someone else's data.
+func (c *Client) CreateVolume(ctx context.Context, name string, labels map[string]string) error {
+	api, err := c.connect()
+	if err != nil {
+		return err
+	}
+	if _, err := api.VolumeInspect(ctx, name, client.VolumeInspectOptions{}); err == nil {
+		return fail.New(fail.Internal, "the volume %s already exists", name).
+			WithHint("it may belong to another machine or an older snapshot; remove it by name with docker volume rm if it is not needed")
+	} else if !cerrdefs.IsNotFound(err) {
+		return unavailable(err)
+	}
+	if _, err := api.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name, Labels: labels}); err != nil {
+		return fmt.Errorf("create volume %s: %w", name, err)
+	}
+	return nil
+}
+
+// RemoveVolume removes a volume by its exact name.
+func (c *Client) RemoveVolume(ctx context.Context, name string) error {
+	api, err := c.connect()
+	if err != nil {
+		return err
+	}
+	if _, err := api.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); err != nil {
+		return fmt.Errorf("remove volume %s: %w", name, err)
+	}
+	return nil
+}
+
+// VolumeSizes returns the size of every volume by name, as docker system df -v reports it.
+func (c *Client) VolumeSizes(ctx context.Context) (map[string]int64, error) {
+	api, err := c.connect()
+	if err != nil {
+		return nil, err
+	}
+	res, err := api.DiskUsage(ctx, client.DiskUsageOptions{Volumes: true, Verbose: true})
+	if err != nil {
+		return nil, unavailable(err)
+	}
+	sizes := map[string]int64{}
+	for _, v := range res.Volumes.Items {
+		sizes[v.Name] = -1
+		if v.UsageData != nil {
+			sizes[v.Name] = v.UsageData.Size
+		}
+	}
+	return sizes, nil
+}
+
+// RunHelper runs a helper container to its end, pulling its image first when it is missing,
+// and removes it. It returns the exit code and the last lines of its output.
+func (c *Client) RunHelper(ctx context.Context, h Helper) (exit int, output []string, err error) {
+	api, err := c.connect()
+	if err != nil {
+		return 0, nil, err
+	}
+	if _, err := api.ImageInspect(ctx, h.Image); cerrdefs.IsNotFound(err) {
+		pull, err := api.ImagePull(ctx, h.Image, client.ImagePullOptions{})
+		if err != nil {
+			return 0, nil, fmt.Errorf("pull %s: %w", h.Image, err)
+		}
+		if err := pull.Wait(ctx); err != nil {
+			return 0, nil, fmt.Errorf("pull %s: %w", h.Image, err)
+		}
+	} else if err != nil {
+		return 0, nil, unavailable(err)
+	}
+	created, err := api.ContainerCreate(ctx, helperOptions(h))
+	if err != nil {
+		return 0, nil, fmt.Errorf("create helper container: %w", err)
+	}
+	id := created.ID
+	defer func() {
+		_, _ = api.ContainerRemove(context.WithoutCancel(ctx), id, client.ContainerRemoveOptions{Force: true})
+	}()
+	if _, err := api.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
+		return 0, nil, fmt.Errorf("start helper container: %w", err)
+	}
+	wait := api.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	select {
+	case res := <-wait.Result:
+		exit = int(res.StatusCode)
+	case err := <-wait.Error:
+		return 0, nil, fmt.Errorf("wait for helper container: %w", err)
+	}
+	output, err = c.Logs(ctx, id, 20)
+	return exit, output, err
+}
+
+func helperOptions(h Helper) client.ContainerCreateOptions {
+	return client.ContainerCreateOptions{
+		Config:     &container.Config{Image: h.Image, Cmd: h.Cmd, Labels: h.Labels},
+		HostConfig: &container.HostConfig{Binds: h.Binds, NetworkMode: "none"},
+	}
 }
 
 // MemTotal returns the memory the Docker daemon has, the VM's on Docker Desktop.
@@ -183,6 +310,7 @@ func fromInspect(in container.InspectResponse) Container {
 	if in.Config != nil {
 		ct.Image = in.Config.Image
 		ct.Labels = in.Config.Labels
+		ct.Cmd = in.Config.Cmd
 	}
 	if ct.Labels == nil {
 		ct.Labels = map[string]string{}
@@ -191,6 +319,9 @@ func fromInspect(in container.InspectResponse) Container {
 		ct.State = string(s.Status)
 		ct.ExitCode = s.ExitCode
 		ct.OOMKilled = s.OOMKilled
+		if t, err := time.Parse(time.RFC3339Nano, s.StartedAt); err == nil && t.Year() > 1 {
+			ct.StartedAt = t
+		}
 		if h := s.Health; h != nil {
 			ct.Health = string(h.Status)
 			if n := len(h.Log); n > 0 && h.Log[n-1] != nil {
@@ -312,18 +443,27 @@ func (c *Client) Volumes(ctx context.Context, labels map[string]string) ([]Volum
 	}
 	out := make([]Volume, 0, len(list.Items))
 	for _, v := range list.Items {
-		out = append(out, Volume{Name: v.Name, Labels: v.Labels})
+		out = append(out, Volume{Name: v.Name, Labels: v.Labels, Created: v.CreatedAt})
 	}
 	return out, nil
 }
 
 // Logs returns the last tail lines a container wrote to stdout and stderr, in order.
 func (c *Client) Logs(ctx context.Context, id string, tail int) ([]string, error) {
+	return c.logs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Tail: strconv.Itoa(tail)})
+}
+
+// Stdout returns every line a container wrote to stdout that Docker still keeps, in order.
+func (c *Client) Stdout(ctx context.Context, id string) ([]string, error) {
+	return c.logs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, Tail: "all"})
+}
+
+func (c *Client) logs(ctx context.Context, id string, opts client.ContainerLogsOptions) ([]string, error) {
 	api, err := c.connect()
 	if err != nil {
 		return nil, err
 	}
-	rc, err := api.ContainerLogs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Tail: strconv.Itoa(tail)})
+	rc, err := api.ContainerLogs(ctx, id, opts)
 	if err != nil {
 		return nil, fmt.Errorf("logs of %s: %w", id, err)
 	}

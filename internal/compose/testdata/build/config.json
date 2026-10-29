@@ -1,0 +1,30 @@
+{
+  "name": "shop-main",
+  "networks": {
+    "default": {
+      "name": "shop-main_default",
+      "ipam": {}
+    }
+  },
+  "services": {
+    "app": {
+      "command": null,
+      "entrypoint": null,
+      "networks": {
+        "default": null
+      },
+      "build": {
+        "context": "/src/shop/app",
+        "dockerfile": "Dockerfile"
+      }
+    },
+    "db": {
+      "command": null,
+      "entrypoint": null,
+      "image": "busybox:1.37.0",
+      "networks": {
+        "default": null
+      }
+    }
+  }
+}

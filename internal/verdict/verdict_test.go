@@ -129,6 +129,55 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
+func TestStopped(t *testing.T) {
+	t.Parallel()
+	routes := map[string]Route{"web": {URL: "http://shop.main.localhost/", Port: 3000}}
+	for _, tt := range []struct {
+		name         string
+		services     []string
+		containers   []docker.Container
+		healthchecks map[string]bool
+		verdict      string
+	}{
+		{name: "stopped to make room", services: []string{"db", "migrate", "web"},
+			containers: []docker.Container{ct("db", "exited", "", 0), ct("migrate", "exited", "", 0), ct("web", "exited", "", 137)}, verdict: Stopped},
+		{name: "stopped by hand, SIGTERM", services: []string{"web"},
+			containers: []docker.Container{ct("web", "exited", "", 143)}, verdict: Stopped},
+		{name: "a healthcheck but no route", services: []string{"db"}, healthchecks: map[string]bool{"db": true},
+			containers: []docker.Container{ct("db", "exited", "", 0)}, verdict: Stopped},
+		{name: "a crash is not a stop", services: []string{"api", "web"},
+			containers: []docker.Container{ct("api", "exited", "", 1), ct("web", "exited", "", 137)}, verdict: Failed},
+		{name: "killed for lack of memory", services: []string{"web"},
+			containers: []docker.Container{{ID: "web", Labels: map[string]string{stack.LabelService: "web"}, State: "exited", ExitCode: 137, OOMKilled: true}}, verdict: Failed},
+		{name: "only one-off services stay Ready", services: []string{"migrate"},
+			containers: []docker.Container{ct("migrate", "exited", "", 0)}, verdict: Ready},
+		// After docker compose up -d of a stopped stack every container runs again.
+		{name: "starting again is Starting", services: []string{"db", "web"},
+			containers: []docker.Container{ct("db", "running", "starting", 0), ct("web", "running", "", 0)}, verdict: Starting},
+		{name: "a missing service is Missing", services: []string{"db", "web"},
+			containers: []docker.Container{ct("web", "exited", "", 0)}, verdict: Failed},
+		{name: "created, never started", services: []string{"web"},
+			containers: []docker.Container{ct("web", "created", "", 0)}, verdict: Starting},
+	} {
+		res := Evaluate(Input{Services: tt.services, Containers: tt.containers, Routes: routes, Healthchecks: tt.healthchecks, Timeout: time.Minute})
+		if res.Verdict != tt.verdict {
+			t.Errorf("%s: verdict %s, want %s (failure %+v)", tt.name, res.Verdict, tt.verdict, res.Failure)
+		}
+		if tt.verdict == Stopped && (res.Failure != nil || len(res.Services) != len(tt.services)) {
+			t.Errorf("%s: %+v", tt.name, res)
+		}
+	}
+}
+
+func TestSeedFailed(t *testing.T) {
+	t.Parallel()
+	seed := &Failure{Service: "db", Reason: SeedFailed, Hint: "the seed command failed", Output: []string{"ERROR: relation exists"}}
+	res := Evaluate(Input{Services: []string{"db"}, Containers: []docker.Container{ct("db", "running", "healthy", 0)}, Seed: seed})
+	if res.Verdict != Failed || res.Failure != seed || len(res.Services) != 1 || !res.Services[0].Ready {
+		t.Errorf("%+v", res)
+	}
+}
+
 func TestHints(t *testing.T) {
 	t.Parallel()
 	res := Evaluate(Input{Services: []string{"db"}, Containers: []docker.Container{

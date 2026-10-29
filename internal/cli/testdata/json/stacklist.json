@@ -26,5 +26,13 @@
     }
   ],
   "memoryBytes": 838860800,
-  "budgetBytes": 12884901888
+  "budgetBytes": 12884901888,
+  "waiting": [
+    {
+      "project": "shop-feature-x",
+      "place": 1,
+      "memoryBytes": 805306368,
+      "since": "2026-10-28T12:00:00Z"
+    }
+  ]
 }

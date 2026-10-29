@@ -59,6 +59,10 @@ const (
 	NoCapacity = "NoCapacity"
 	// NotInteractive: a command would ask a question, but nobody can answer it.
 	NotInteractive = "NotInteractive"
+	// SnapshotNotFound: the repository has no snapshot of that name.
+	SnapshotNotFound = "SnapshotNotFound"
+	// SnapshotExists: the repository already has a snapshot of that name.
+	SnapshotExists = "SnapshotExists"
 	// Internal: an unexpected error without a code of its own.
 	Internal = "Internal"
 )

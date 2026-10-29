@@ -65,6 +65,15 @@ func TestDown(t *testing.T) {
 		}
 	})
 
+	t.Run("no volumes to keep", func(t *testing.T) {
+		t.Parallel()
+		e := downEnv(t, "main")
+		e.docker.volumes = nil
+		if _, text, _ := e.run("down"); strings.Contains(text, "Volumes stay") {
+			t.Errorf("a stack without volumes was told they stay:\n%s", text)
+		}
+	})
+
 	t.Run("volumes of a merged, clean branch", func(t *testing.T) {
 		t.Parallel()
 		e := downEnv(t, "main")
@@ -128,4 +137,38 @@ func TestDown(t *testing.T) {
 			t.Errorf("exit %d, stdout %s", code, stdout)
 		}
 	})
+}
+
+// After siding down only the volumes are left; down --volumes still finds the stack by them.
+func TestDownOnlyData(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	id := e.id()
+	labels := id.Labels()
+	labels[stack.LabelProject] = id.Project()
+	e.docker.volumes = []docker.Volume{{Name: "shop-main_data", Labels: labels}}
+	if code, stdout, _ := e.run("down", "--volumes", "--json"); code != exitOK || !strings.Contains(stdout, "shop-main_data") {
+		t.Errorf("exit %d, %s", code, stdout)
+	}
+	if runs := e.compose.recorded(); len(runs) != 1 || !slices.Equal(runs[0].args, []string{"down", "--remove-orphans", "--volumes"}) {
+		t.Errorf("compose %+v", runs)
+	}
+	// status still says there is no stack.
+	if code, stdout, _ := e.run("status", "--json"); code != exitFailed || !strings.Contains(stdout, `"code": "StackNotFound"`) {
+		t.Errorf("status: exit %d, %s", code, stdout)
+	}
+}
+
+func TestStopProject(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	a := &app{opts: e.opts}
+	if err := a.stopProject(t.Context(), "shop-main", &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	runs := e.compose.recorded()
+	// By project name, without a compose file, and it removes nothing.
+	if len(runs) != 1 || runs[0].inv.Project != "shop-main" || len(runs[0].inv.Files) != 0 || !slices.Equal(runs[0].args, []string{"stop"}) {
+		t.Errorf("runs %+v", runs)
+	}
 }

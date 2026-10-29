@@ -26,6 +26,9 @@ func Default() Config {
 	return Config{Project: "siding", Container: "siding-proxy", Network: "siding", Image: Image, DefaultPort: 80}
 }
 
+// AccessLogFlag is in the command of a proxy that records its requests.
+const AccessLogFlag = "--accesslog=true"
+
 // RoutesMount is where the proxy reads route files that siding ui writes.
 const RoutesMount = "/etc/siding/routes"
 
@@ -39,6 +42,10 @@ type Settings struct {
 	Machine string
 	// Budget is the memory budget in bytes, 0 for the default.
 	Budget int64
+	// Builds is the number of build slots, 0 for the default.
+	Builds int
+	// Idle is the idle threshold in seconds, 0 for off, nil for the default.
+	Idle *int64
 	// RoutesDir is the directory on this machine with the route files of siding ui.
 	RoutesDir string
 	// HostAlias is what host.docker.internal resolves to in the proxy: the proxy network's
@@ -48,12 +55,19 @@ type Settings struct {
 
 // ComposeFile renders the proxy's compose file. The constraint keeps Traefik to containers
 // siding labelled for this proxy's network, so foreign Traefik labels on the same daemon are
-// never exposed.
+// never exposed. The access log on stdout records only the router and the time of a request;
+// Docker keeps it at 30 MiB at most (phase 4 design D3).
 func ComposeFile(c Config, s Settings) []byte {
 	constraint := fmt.Sprintf("LabelRegex(`dev.siding.repo`, `.+`) && Label(`traefik.docker.network`, `%s`)", c.Network)
 	labels := fmt.Sprintf("      dev.siding.machine: %q\n      dev.siding.host-alias: %q\n", s.Machine, s.HostAlias)
 	if s.Budget > 0 {
 		labels += fmt.Sprintf("      dev.siding.budget: \"%d\"\n", s.Budget)
+	}
+	if s.Builds > 0 {
+		labels += fmt.Sprintf("      dev.siding.builds: \"%d\"\n", s.Builds)
+	}
+	if s.Idle != nil {
+		labels += fmt.Sprintf("      dev.siding.idle: \"%d\"\n", *s.Idle)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, `# Written by siding setup. Do not edit: siding setup rewrites it.
@@ -71,6 +85,17 @@ services:
       - --providers.file.directory=%s
       - --providers.file.watch=true
       - --ping=true
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.fields.defaultmode=drop
+      - --accesslog.fields.names.RouterName=keep
+      - --accesslog.fields.names.StartUTC=keep
+      - --accesslog.fields.headers.defaultmode=drop
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
     ports:
       - "127.0.0.1:%d:80"
     extra_hosts:

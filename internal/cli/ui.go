@@ -24,7 +24,8 @@ import (
 var pageHTML string
 
 var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
-	"bytes": bytesText,
+	"bytes":   bytesText,
+	"bytes64": func(n int64) string { return bytesText(uint64(n)) },
 }).Parse(pageHTML))
 
 type pageData struct {

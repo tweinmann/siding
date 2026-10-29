@@ -110,7 +110,7 @@ func TestAtLeast(t *testing.T) {
 
 func TestTailBuffer(t *testing.T) {
 	t.Parallel()
-	b := &tailBuffer{max: 2}
+	b := &TailBuffer{Max: 2}
 	_, _ = b.Write([]byte("one\ntwo\nthr"))
 	_, _ = b.Write([]byte("ee\nfour"))
 	if got := b.String(); got != "three\nfour" {
@@ -160,6 +160,9 @@ func TestParseConfigDetails(t *testing.T) {
 			t.Errorf("%s: %+v\nwant %+v", want.name, s, want)
 		}
 	}
+	if got := p.Services["db"].Volumes; !reflect.DeepEqual(got, []string{"pgdata", "cache"}) {
+		t.Errorf("db mounts the named volumes %v", got)
+	}
 	if got := p.Volumes["cache"]; got.Name != "pip-cache" || got.Labels["dev.siding.shared"] != "true" {
 		t.Errorf("volume cache %+v", got)
 	}
@@ -187,5 +190,21 @@ Error response from daemon: Conflict. The container name "/demo-db" is already i
 	}
 	if got := errorLines(" Network x_default Creating\nno such service: nope\n"); got != "no such service: nope" {
 		t.Errorf("without an error line: %q", got)
+	}
+}
+
+// testdata/build/config.json is captured like the others, from testdata/build/compose.yaml.
+func TestParseConfigBuild(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("testdata", "build", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := ParseConfig(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Services["app"].Build || p.Services["db"].Build {
+		t.Errorf("app build %v, db build %v; want true, false", p.Services["app"].Build, p.Services["db"].Build)
 	}
 }

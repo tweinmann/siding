@@ -1,0 +1,40 @@
+{
+  "apiVersion": "siding.dev/v1alpha1",
+  "kind": "Status",
+  "verdict": "Stopped",
+  "stack": {
+    "project": "shop-main",
+    "repo": "shop",
+    "branch": "main",
+    "worktree": "/src/shop",
+    "url": "http://shop.main.localhost/"
+  },
+  "services": [
+    {
+      "name": "api",
+      "state": "exited",
+      "route": "/api",
+      "url": "http://api.shop.main.localhost/",
+      "ready": false
+    },
+    {
+      "name": "db",
+      "state": "exited",
+      "ready": false
+    },
+    {
+      "name": "mail",
+      "state": "exited",
+      "url": "http://mail.shop.main.localhost/",
+      "ready": false
+    },
+    {
+      "name": "web",
+      "state": "exited",
+      "route": "/",
+      "url": "http://web.shop.main.localhost/",
+      "ready": false
+    }
+  ],
+  "hint": "every container of the stack is stopped, perhaps to make room for another stack; siding up --wait starts it again"
+}

@@ -31,6 +31,9 @@ Read its `verdict` and the exit code:
   listens on 127.0.0.1 instead of 0.0.0.0, or on another port than the one routed), `NotReady`
   means it is still starting. Read the hint and the logs; if it is only slow, run
   `siding status --wait --json --timeout 5m`.
+- **2, `Stopped`**: every container of the stack is stopped, nothing failed; often `up` in
+  another worktree stopped it to make room in the memory budget. No data is lost. Run
+  `siding up --wait --json` to start it again.
 - **3, `NoCapacity`**: the stack does not fit into the machine's memory budget; nothing was
   started. Stop and tell the user, with the `message` of the `Error` document. Freeing memory
   or raising the budget is the user's decision.
@@ -40,13 +43,16 @@ An `Error` document (exit 1, `kind: Error`) means siding could not act at all; i
 
 ## More detail
 
-- `siding status --json`: the current verdict, without waiting (exit 2 while starting).
+- `siding status --json`: the current verdict and the stack's address in `stack.url`, without
+  waiting and without starting anything (exit 2 while starting or stopped).
 - `siding logs --json` or `siding logs --json <service> --tail 200`: the last log lines per
   service. Values from `.env` and the services' environment appear as `***`.
 - `siding ps --json`: every stack on this machine, with state and memory.
 
 ## Rules
 
+- Only the addresses siding reports work: `stack.url` and the services' `url`. Never give
+  `localhost:<port>` from the compose file; siding publishes no ports.
 - Do not edit `.siding/override.yml`; siding rewrites it on every `up`. Change the compose file
   or the service labels `dev.siding.route` and `dev.siding.port` instead.
 - Leave stopping and removing stacks to the user; `siding down` only removes containers, and

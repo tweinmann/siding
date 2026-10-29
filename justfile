@@ -27,7 +27,9 @@ test:
 # Rewrite golden files from the current code after an intended change
 # (every package with golden files; a package without the -update flag would fail on it)
 golden:
-    go test ./internal/cli ./internal/stack -update
+    go test ./internal/cli ./internal/stack ./internal/proxy -update
+    # The page is rendered from stacklist.json and gc-dryrun.json, so write it once they are new.
+    go test ./internal/cli -run TestRenderPage -update
 
 # Build a static siding binary for this container (linux) into bin/
 build:

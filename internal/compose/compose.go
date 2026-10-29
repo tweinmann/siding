@@ -104,7 +104,7 @@ func (c *CLI) Run(ctx context.Context, inv Invocation, args []string, stdout, st
 	if err := c.checkVersion(ctx); err != nil {
 		return err
 	}
-	tail := &tailBuffer{max: 20}
+	tail := &TailBuffer{Max: 20}
 	if err := c.exec(ctx, inv, inv.args(args...), stdout, io.MultiWriter(stderr, tail)); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err() // interrupted, e.g. Ctrl-C during logs --follow
@@ -168,31 +168,34 @@ func errorLines(output string) string {
 	return strings.Join(lines, "\n")
 }
 
-// tailBuffer keeps the last max lines written to it.
-type tailBuffer struct {
-	max     int
+// TailBuffer keeps the last Max lines written to it.
+type TailBuffer struct {
+	Max     int
 	lines   []string
 	partial string
 }
 
-func (t *tailBuffer) Write(p []byte) (int, error) {
+func (t *TailBuffer) Write(p []byte) (int, error) {
 	s := t.partial + string(p)
 	parts := strings.Split(s, "\n")
 	t.partial = parts[len(parts)-1]
 	t.lines = append(t.lines, parts[:len(parts)-1]...)
-	if len(t.lines) > t.max {
-		t.lines = t.lines[len(t.lines)-t.max:]
+	if len(t.lines) > t.Max {
+		t.lines = t.lines[len(t.lines)-t.Max:]
 	}
 	return len(p), nil
 }
 
-func (t *tailBuffer) String() string {
+func (t *TailBuffer) String() string { return strings.Join(t.Lines(), "\n") }
+
+// Lines returns the kept lines, the unfinished last one included.
+func (t *TailBuffer) Lines() []string {
 	lines := slices.Clone(t.lines)
 	if t.partial != "" {
 		lines = append(lines, t.partial)
 	}
-	if len(lines) > t.max {
-		lines = lines[len(lines)-t.max:]
+	if len(lines) > t.Max {
+		lines = lines[len(lines)-t.Max:]
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }

@@ -1,0 +1,46 @@
+# Written by siding setup. Do not edit: siding setup rewrites it.
+services:
+  traefik:
+    image: "traefik:v3.7.16"
+    container_name: "siding-proxy"
+    restart: unless-stopped
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=siding
+      - "--providers.docker.constraints=LabelRegex(`dev.siding.repo`, `.+`) && Label(`traefik.docker.network`, `siding`)"
+      - --providers.file.directory=/etc/siding/routes
+      - --providers.file.watch=true
+      - --ping=true
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.fields.defaultmode=drop
+      - --accesslog.fields.names.RouterName=keep
+      - --accesslog.fields.names.StartUTC=keep
+      - --accesslog.fields.headers.defaultmode=drop
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    ports:
+      - "127.0.0.1:80:80"
+    extra_hosts:
+      - "host.docker.internal:172.19.0.1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "/home/u/.siding/proxy/siding/routes:/etc/siding/routes:ro"
+    networks: [proxy]
+    labels:
+      dev.siding.machine: "not-a-real-machine"
+      dev.siding.host-alias: "172.19.0.1"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+networks:
+  proxy:
+    name: "siding"
+    external: true

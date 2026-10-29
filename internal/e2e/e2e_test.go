@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -78,11 +79,13 @@ const brokenCompose = `services:
 type machine struct {
 	t    *testing.T
 	home string
+	// pids gives every siding run its own pid in the queue: they all share this process.
+	pids *atomic.Int32
 }
 
 func newMachine(t *testing.T) *machine {
 	t.Helper()
-	m := &machine{t: t, home: t.TempDir()}
+	m := &machine{t: t, home: t.TempDir(), pids: &atomic.Int32{}}
 	t.Cleanup(func() {
 		// By exact name only.
 		run(t, "", "docker", "compose", "-p", testProxy.Project, "down", "-v", "--remove-orphans")
@@ -99,11 +102,19 @@ func (m *machine) siding(dir string, args ...string) (int, string) {
 
 func (m *machine) sidingCtx(ctx context.Context, dir string, args ...string) (int, string) {
 	m.t.Helper()
+	code, stdout, _ := m.sidingFull(ctx, dir, args...)
+	return code, stdout
+}
+
+// sidingFull is siding with stderr too.
+func (m *machine) sidingFull(ctx context.Context, dir string, args ...string) (int, string, string) {
+	m.t.Helper()
 	// A machine id of its own: gc acts on every stack of "this machine", and must only ever see
 	// the tests' stacks, never one a developer started in the same daemon.
 	opts := cli.Options{
 		Dir: dir, Home: m.home, Getenv: os.Getenv, OSMachineID: func() string { return "siding-test-e2e" },
 		IsLocalAddress: overview.IsLocalAddress, Stdin: strings.NewReader(""), IsTerminal: func() bool { return false },
+		PID: os.Getpid() + int(m.pids.Add(1))*1000000, Alive: func(int) bool { return true },
 		Git: git.Client{}, Compose: &compose.CLI{}, Docker: &docker.Client{},
 		Probe: probe.HTTP{Header: stack.ServiceHeader}, Browser: noBrowser{}, Clock: cli.SystemClock{},
 		Proxy: testProxy,
@@ -111,7 +122,7 @@ func (m *machine) sidingCtx(ctx context.Context, dir string, args ...string) (in
 	var out, errOut bytes.Buffer
 	code := cli.Execute(ctx, cli.New(opts), args, &out, &errOut)
 	m.t.Logf("siding %s: exit %d\n%s", strings.Join(args, " "), code, errOut.String())
-	return code, out.String()
+	return code, out.String(), errOut.String()
 }
 
 type noBrowser struct{}
@@ -293,6 +304,13 @@ func TestStacks(t *testing.T) {
 		if out := run(t, "", "docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=siding-test-shop-feature-x"); strings.TrimSpace(out) != "" {
 			t.Errorf("containers left: %q", out)
 		}
+		// Only the data is left; down --volumes still finds the stack by its volumes.
+		if code, out := m.siding(shop, "down", "--volumes", "--force", "--json"); code != 0 || !strings.Contains(out, "siding-test-shop-feature-x_data") {
+			t.Errorf("down --volumes after down: exit %d\n%s", code, out)
+		}
+		if out := run(t, "", "docker", "volume", "ls", "-q", "--filter", "name=siding-test-shop-feature-x_data"); strings.TrimSpace(out) != "" {
+			t.Errorf("the volume survived: %q", out)
+		}
 	})
 
 	t.Run("down --volumes keeps unmerged and dirty work", func(t *testing.T) {
@@ -337,7 +355,8 @@ func TestStacks(t *testing.T) {
 		if code, out := m.siding(t.TempDir(), "setup", "--budget", "64m", "--json"); code != 0 {
 			t.Fatalf("setup --budget: exit %d\n%s", code, out)
 		}
-		code, out := m.siding(budgeted, "up", "--repo", "siding-test-budget", "--wait", "--json")
+		// With --wait it waits in line; a short timeout ends it with exit 3 as well.
+		code, out := m.siding(budgeted, "up", "--repo", "siding-test-budget", "--wait", "--timeout", "5s", "--json")
 		if code != 3 || decode(t, out).Code != "NoCapacity" {
 			t.Errorf("over budget: exit %d\n%s", code, out)
 		}

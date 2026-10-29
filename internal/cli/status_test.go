@@ -31,6 +31,27 @@ func TestStatus(t *testing.T) {
 		}
 	})
 
+	t.Run("stopped", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t)
+		e.proxyUp(80)
+		for _, svc := range []string{"api", "db", "mail", "web"} {
+			e.docker.add(container(e.id(), svc, "exited", "", 137))
+		}
+		// --wait ends at once: a stopped stack does not start by itself.
+		code, stdout, stderr := e.run("status", "--wait", "--json")
+		if code != exitTimedOut || stderr != "" {
+			t.Fatalf("exit %d, stderr %q, stdout %s", code, stderr, stdout)
+		}
+		testutil.Golden(t, filepath.Join("testdata", "json", "status-stopped.json"), []byte(stdout))
+		if len(e.probe.asked) != 0 || e.clock.slept != 0 {
+			t.Errorf("probes %v, slept %d", e.probe.asked, e.clock.slept)
+		}
+		if code, out, _ := e.run("status"); code != exitTimedOut || !strings.Contains(out, "shop-main: Stopped") || !strings.Contains(out, "siding up --wait starts it again") {
+			t.Errorf("text: exit %d\n%s", code, out)
+		}
+	})
+
 	t.Run("failed with the log tail, redacted", func(t *testing.T) {
 		t.Parallel()
 		e := newEnv(t)
